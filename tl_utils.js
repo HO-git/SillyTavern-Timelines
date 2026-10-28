@@ -141,24 +141,21 @@ export async function navigateToMessage(chatSessionName, messageId, swipeId = -1
 }
 
 /**
- * Closes any open drawers that are not pinned.
- * It also toggles the display icons and manages the animation during the transition.
+ * Closes any open drawers (of the main ST UI, e.g. the Extensions panel) that are not pinned.
+ * It also toggles the drawer icons.
+ *
+ * This mirrors `doNavbarIconClick` in ST's `script.js`: ST opens and closes drawers by toggling
+ * these style classes only (the CSS does the rest). We must not animate the drawers with jQuery
+ * (e.g. `slideToggle`), because that leaves an inline `display: none` on the drawer, after which
+ * ST can no longer open it (the Extensions button stopped working after closing the timeline).
  */
-// TODO: The `openDrawer` style class appears nowhere else in this project.
-// TODO: Does Timelines need this to interact with the main parts of ST (which does use `openDrawer`), or is this actually a no-op?
 // This is currently called from:
 //   - The handler registered to `cy.ready` (`index.js`)
 //   - `onTimelineButtonClick` (`index.js`)
 //   - Upon returning from `navigateToMessage` (`tl_utils.js`)
 export function closeOpenDrawers() {
-    var openDrawers = $('.openDrawer').not('.pinnedOpen');
-
-    openDrawers.addClass('resizing').slideToggle(200, 'swing', function () {
-        $(this).closest('.drawer-content').removeClass('resizing');
-    });
-
-    $('.openIcon').toggleClass('closedIcon openIcon');
-    openDrawers.toggleClass('closedDrawer openDrawer');
+    $('.openIcon').not('.drawerPinnedOpen').toggleClass('closedIcon openIcon');
+    $('.openDrawer').not('.pinnedOpen').toggleClass('closedDrawer openDrawer');
 }
 
 /**
