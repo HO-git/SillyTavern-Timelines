@@ -64,7 +64,8 @@ import { event_types, eventSource, saveSettingsDebounced } from '../../../../scr
 import { navigateToMessage, closeModal, closeTippy, handleModalDisplay, closeOpenDrawers } from './tl_utils.js';
 import { setupStylesAndData, highlightElements, restoreElements } from './tl_style.js';
 import { fetchData, prepareData } from './tl_node_data.js';
-import { toggleGraphOrientation, highlightNodesByQuery, makeQueryFragments, setGraphOrientationBasedOnViewport, getGraphOrientation } from './tl_graph.js';
+import { registerTimelinesTreeLayout } from './tl_layout.js';
+import { toggleGraphOrientation, highlightNodesByQuery, makeQueryFragments, getViewportOrientation, setEdgeStyleForOrientation, getGraphOrientation } from './tl_graph.js';
 import { registerSlashCommand } from '../../../slash-commands.js';
 import { fixMarkdown } from '../../../power-user.js';
 import { hideLoader, showLoader } from '../../../loader.js';
@@ -105,6 +106,7 @@ let lastContext = null;  // for tracking whether we need to refresh the graph
 let lastTimelineData = null;  // last fetched and prepared timeline data
 let theCy = null;  // Cytoscape instance
 let layout = {};  // Cytoscape graph layout configuration; populated later in `updateTimelineDataIfNeeded`
+const LARGE_GRAPH_NODE_COUNT = 3000;  // above this many nodes, use the fast tree layout instead of dagre
 
 /**
  * Asynchronously loads settings from `extension_settings.timeline`,
@@ -944,12 +946,13 @@ function initializeCytoscape(nodeData, styles) {
     cytoscape.use(cytoscapeDagre);
     cytoscape.use(cytoscapeContextMenus);
     cytoscape.use(cytoscapePopper);
+    registerTimelinesTreeLayout(cytoscape);
 
     const cy = cytoscape({
         container: timelinesDiagramDiv,
         elements: nodeData,
         style: styles,
-        layout: layout,
+        layout: { name: 'preset' },  // The real layout is run by `renderCytoscapeDiagram`, once all elements are in.
         wheelSensitivity: 0.2,  // Adjust as needed.
     });
     theCy = cy;
@@ -1181,13 +1184,14 @@ function setupEventHandlers(cy, nodeData) {
         });
     }
 
-    // The text search field is a garden-variety DOM element, so attach an event listener the classical way.
-    textSearchElement.addEventListener('input', function (evt) {
+    // The text search field is a garden-variety DOM element. Assign (rather than add) the listeners,
+    // so that rebuilding the graph replaces them instead of piling up one more search per rebuild.
+    textSearchElement.oninput = function (evt) {
         performTextSearch();
-    });
-    textSearchElement.addEventListener('focus', function (evt) {
+    };
+    textSearchElement.onfocus = function (evt) {
         performTextSearch();
-    });
+    };
 
     // Attach event listeners to toolbar buttons.
     let modal = document.getElementById('timelinesModal');
@@ -1210,8 +1214,7 @@ function setupEventHandlers(cy, nodeData) {
 
     let reloadBtn = modal.getElementsByClassName('reload')[0];
     reloadBtn.onclick = function () {
-        slashCommandHandler(null, 'r');  // r = reload
-        refreshLayout();
+        slashCommandHandler(null, 'r');  // r = reload (this rebuilds the graph and runs the layout; no need to lay out the old graph first)
     };
 
     let zoomtofitBtn = modal.getElementsByClassName('zoomtofit')[0];
@@ -1245,7 +1248,9 @@ function setupEventHandlers(cy, nodeData) {
     cy.on('render', function () {
         if (!hasSetOrientation) {
             hasSetOrientation = true;
-            setGraphOrientationBasedOnViewport(cy, layout);
+            // The layout already ran with this orientation when the Cytoscape instance was created
+            // (see `renderCytoscapeDiagram`), so only the edge style needs updating here.
+            setEdgeStyleForOrientation(cy, layout.rankDir);
             cy.nodes().forEach(node => { node.lock(); });  // nodes are always locked after running the layout anyway
             fixRootNodePosition(cy);
         }
@@ -1442,17 +1447,15 @@ function setupEventHandlers(cy, nodeData) {
             node._tippy = null;
         }
     });
+}
 
-    // On certain chat events, null the lastContext, so that the graph refreshes at the next `updateTimelineDataIfNeeded`.
-    // TODO: Are there other events we should catch?
-    function clearLastContext() {
-        lastContext = null;
-    }
-    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, clearLastContext);
-    eventSource.on(event_types.USER_MESSAGE_RENDERED, clearLastContext);
-    eventSource.on(event_types.CHAT_DELETED, clearLastContext);
-    eventSource.on(event_types.CHATLOADED, clearLastContext);  // TODO: this seems wrong, no such constant?
-    eventSource.on(event_types.MESSAGE_SWIPED, clearLastContext);
+/**
+ * On certain chat events, null the lastContext, so that the graph refreshes at the next `updateTimelineDataIfNeeded`.
+ * Registered once at startup (registering these per graph rebuild would pile up duplicate listeners).
+ */
+// TODO: Are there other events we should catch?
+function clearLastContext() {
+    lastContext = null;
 }
 
 /**
@@ -1463,7 +1466,15 @@ function setupEventHandlers(cy, nodeData) {
  * @param {Object} nodeData - The data used to render the nodes and edges of the Cytoscape diagram.
  */
 function renderCytoscapeDiagram(nodeData) {
+    // Destroy the previous graph, if any. Otherwise every rebuild leaks a whole Cytoscape instance (and its event handlers).
+    closeTapTippy();
+    if (theCy) {
+        theCy.destroy();
+        theCy = null;
+    }
+
     const styles = setupStylesAndData(nodeData);
+    layout.rankDir = getViewportOrientation();  // Run the layout only once, in the final orientation.
     const cy = initializeCytoscape(nodeData, styles);
     if (cy) {
         if (extension_settings.timeline.enableMinZoom) {
@@ -1472,6 +1483,9 @@ function renderCytoscapeDiagram(nodeData) {
         if (extension_settings.timeline.enableMaxZoom) {
             cy.maxZoom(Number(extension_settings.timeline.maxZoom));
         }
+        // Add swipes (if auto-expanded) before running the layout, so that the layout only needs to run once.
+        toggleSwipes(cy, extension_settings.timeline.autoExpandSwipes);
+        cy.layout(layout).run();
         setupEventHandlers(cy, nodeData);
     }
 }
@@ -1511,10 +1525,19 @@ async function updateTimelineDataIfNeeded() {
         lastContext = context; // Update `lastContext` to the current context
         console.info('Timeline data updated');
 
+        // For large graphs, dagre blocks the UI for a long time (tens of seconds or more), so use our fast tree layout instead.
+        const nodeCount = (lastTimelineData || []).filter(element => element.group === 'nodes').length;
+        const useTreeLayout = (nodeCount > LARGE_GRAPH_NODE_COUNT);
+        if (useTreeLayout) {
+            console.info(`Timelines: ${nodeCount} nodes, using the fast tree layout instead of dagre.`);
+        }
+
         // https://github.com/cytoscape/cytoscape.js-dagre
         // https://js.cytoscape.org/#layouts
         layout = {
-            name: 'dagre',
+            name: useTreeLayout ? 'timelinesTree' : 'dagre',  // see `tl_layout.js`
+            nodeWidth: extension_settings.timeline.nodeWidth,  // only used by the tree layout (dagre measures the nodes)
+            nodeHeight: extension_settings.timeline.nodeHeight,  // only used by the tree layout
             nodeDimensionsIncludeLabels: true,
             nodeSep: extension_settings.timeline.nodeSeparation,  // Separation between adjacent nodes in the same rank
             edgeSep: extension_settings.timeline.edgeSeparation,  // Separation between adjacent edges in the same rank
@@ -1600,7 +1623,6 @@ async function onTimelineButtonClick() {
     handleModalDisplay();  // Show the timeline view, and wire the close button to close it.
     if (dataUpdated) {
         renderCytoscapeDiagram(lastTimelineData);  // after this, the Cytoscape instance `theCy` is alive
-        toggleSwipes(theCy, extension_settings.timeline.autoExpandSwipes);
     }
     closeOpenDrawers();
 
@@ -1642,6 +1664,12 @@ jQuery(async () => {
     getContainer().append(settingsHtml);
     $('#show_timeline_view').on('click', onTimelineButtonClick);
     registerSlashCommand('tl', slashCommandHandler, [], '/tl Show the timeline, "/tl r" to reload the graph', false, true);
+
+    eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, clearLastContext);
+    eventSource.on(event_types.USER_MESSAGE_RENDERED, clearLastContext);
+    eventSource.on(event_types.CHAT_DELETED, clearLastContext);
+    eventSource.on(event_types.CHATLOADED, clearLastContext);  // TODO: this seems wrong, no such constant?
+    eventSource.on(event_types.MESSAGE_SWIPED, clearLastContext);
 
     // Bind listeners to the specific inputs; format: {html_ui_id: name_in_default_settings, ...}
     const idsToSettingsMap = {

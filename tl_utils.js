@@ -66,8 +66,19 @@ export async function navigateToMessage(chatSessionName, messageId, swipeId = -1
     try {
         // Find the message div matching `messageId`, making it visible if hidden.
         let message = $(`div[mesid=${messageId}]`);
+        let lastState = null;
         while (!message.is(':visible')) {
             console.info(`Message ${messageId} is not visible. Looking for it...`);
+
+            // Bail out if the previous attempt made no progress. Otherwise this loop spins forever
+            // (freezing the whole page) e.g. when the message is hidden by CSS, or when "show more" doesn't load anything.
+            const state = `${chat.children('.mes').length}/${chat.children('.mes').filter(':visible').length}`;
+            if (state === lastState) {
+                console.info(`Timelines: Message ${messageId} in ${chatSessionName} could not be made visible. Cannot navigate to it.`);
+                return;
+            }
+            lastState = state;
+
             if (chat.children('.mes').not(':visible').length > 0) {  // maybe hidden?
                 console.info('Timelines: Showing hidden messages.');
                 const prevHeight = chat.prop('scrollHeight');
@@ -78,6 +89,7 @@ export async function navigateToMessage(chatSessionName, messageId, swipeId = -1
                 const showMoreBtn = $('#show_more_messages');
                 if (showMoreBtn.length) {
                     console.info('Timelines: Showing more messages.');
+                    showMoreBtn.trigger('click');  // SillyTavern listens for 'click' (older versions used 'mouseup')
                     showMoreBtn.trigger('mouseup');
                 } else {  // no more hiding places
                     console.info(`Timelines: Message ${messageId} in ${chatSessionName} not found. Cannot navigate to it.`);

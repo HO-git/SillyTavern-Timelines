@@ -14,19 +14,20 @@ export function toggleGraphOrientation(cy, layout) {
 }
 
 /**
- * Sets the graph orientation based on the current viewport size.
+ * Determines the graph orientation based on the current viewport size.
  * Chooses Left-to-Right (LR) orientation if the viewport width is greater than its height,
  * otherwise selects Top-to-Bottom (TB).
  *
- * @param {Object} cy - The Cytoscape instance representing the graph.
- * @param {Object} layout - The Cytoscape layout configuration object.
+ * Use this to set `layout.rankDir` *before* creating the Cytoscape instance, so that the
+ * (expensive) layout only needs to run once.
+ *
+ * @returns {string} 'LR' or 'TB'.
  */
-export function setGraphOrientationBasedOnViewport(cy, layout) {
+export function getViewportOrientation() {
     const viewportWidth = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
     const viewportHeight = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
 
-    const orientation = (viewportWidth > viewportHeight) ? 'LR' : 'TB';
-    setOrientation(cy, orientation, layout);
+    return (viewportWidth > viewportHeight) ? 'LR' : 'TB';
 }
 
 /**
@@ -51,6 +52,16 @@ function setOrientation(cy, orientation, layout) {
     // Update layout
     layout.rankDir = orientation;
     cy.layout(layout).run();
+    setEdgeStyleForOrientation(cy, orientation);
+}
+
+/**
+ * Updates the edge style to match the given graph orientation, without re-running the layout.
+ *
+ * @param {Object} cy - The Cytoscape instance representing the graph.
+ * @param {string} orientation - The graph orientation ('LR' or 'TB') that the layout was run with.
+ */
+export function setEdgeStyleForOrientation(cy, orientation) {
     // Update taxi-direction in style
     const taxiDirection = orientation === 'TB' ? 'downward' : 'rightward';
     cy.style().selector('edge').style({

@@ -1,11486 +1,3242 @@
-(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.dagre = f()}})(function(){var define,module,exports;return (function(){function r(e,n,t){function o(i,f){if(!n[i]){if(!e[i]){var c="function"==typeof require&&require;if(!f&&c)return c(i,!0);if(u)return u(i,!0);var a=new Error("Cannot find module '"+i+"'");throw a.code="MODULE_NOT_FOUND",a}var p=n[i]={exports:{}};e[i][0].call(p.exports,function(r){var n=e[i][1][r];return o(n||r)},p,p.exports,r,e,n,t)}return n[i].exports}for(var u="function"==typeof require&&require,i=0;i<t.length;i++)o(t[i]);return o}return r})()({1:[function(require,module,exports){
-/*
-Copyright (c) 2012-2014 Chris Pettitt
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-*/
-
-module.exports = {
-  graphlib: require("./lib/graphlib"),
-
-  layout: require("./lib/layout"),
-  debug: require("./lib/debug"),
-  util: {
-    time: require("./lib/util").time,
-    notime: require("./lib/util").notime
-  },
-  version: require("./lib/version")
-};
-
-},{"./lib/debug":6,"./lib/graphlib":7,"./lib/layout":9,"./lib/util":29,"./lib/version":30}],2:[function(require,module,exports){
 "use strict";
-
-var _ = require("./lodash");
-var greedyFAS = require("./greedy-fas");
-
-module.exports = {
-  run: run,
-  undo: undo
-};
-
-function run(g) {
-  var fas = (g.graph().acyclicer === "greedy"
-    ? greedyFAS(g, weightFn(g))
-    : dfsFAS(g));
-  _.forEach(fas, function(e) {
-    var label = g.edge(e);
-    g.removeEdge(e);
-    label.forwardName = e.name;
-    label.reversed = true;
-    g.setEdge(e.w, e.v, label, _.uniqueId("rev"));
-  });
-
-  function weightFn(g) {
-    return function(e) {
-      return g.edge(e).weight;
-    };
-  }
-}
-
-function dfsFAS(g) {
-  var fas = [];
-  var stack = {};
-  var visited = {};
-
-  function dfs(v) {
-    if (_.has(visited, v)) {
-      return;
+var dagre = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
     }
-    visited[v] = true;
-    stack[v] = true;
-    _.forEach(g.outEdges(v), function(e) {
-      if (_.has(stack, e.w)) {
-        fas.push(e);
-      } else {
-        dfs(e.w);
-      }
-    });
-    delete stack[v];
-  }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+  var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
-  _.forEach(g.nodes(), dfs);
-  return fas;
-}
-
-function undo(g) {
-  _.forEach(g.edges(), function(e) {
-    var label = g.edge(e);
-    if (label.reversed) {
-      g.removeEdge(e);
-
-      var forwardName = label.forwardName;
-      delete label.reversed;
-      delete label.forwardName;
-      g.setEdge(e.w, e.v, label, forwardName);
-    }
-  });
-}
-
-},{"./greedy-fas":8,"./lodash":10}],3:[function(require,module,exports){
-var _ = require("./lodash");
-var util = require("./util");
-
-module.exports = addBorderSegments;
-
-function addBorderSegments(g) {
-  function dfs(v) {
-    var children = g.children(v);
-    var node = g.node(v);
-    if (children.length) {
-      _.forEach(children, dfs);
-    }
-
-    if (_.has(node, "minRank")) {
-      node.borderLeft = [];
-      node.borderRight = [];
-      for (var rank = node.minRank, maxRank = node.maxRank + 1;
-        rank < maxRank;
-        ++rank) {
-        addBorderNode(g, "borderLeft", "_bl", v, node, rank);
-        addBorderNode(g, "borderRight", "_br", v, node, rank);
-      }
-    }
-  }
-
-  _.forEach(g.children(), dfs);
-}
-
-function addBorderNode(g, prop, prefix, sg, sgNode, rank) {
-  var label = { width: 0, height: 0, rank: rank, borderType: prop };
-  var prev = sgNode[prop][rank - 1];
-  var curr = util.addDummyNode(g, "border", label, prefix);
-  sgNode[prop][rank] = curr;
-  g.setParent(curr, sg);
-  if (prev) {
-    g.setEdge(prev, curr, { weight: 1 });
-  }
-}
-
-},{"./lodash":10,"./util":29}],4:[function(require,module,exports){
-"use strict";
-
-var _ = require("./lodash");
-
-module.exports = {
-  adjust: adjust,
-  undo: undo
-};
-
-function adjust(g) {
-  var rankDir = g.graph().rankdir.toLowerCase();
-  if (rankDir === "lr" || rankDir === "rl") {
-    swapWidthHeight(g);
-  }
-}
-
-function undo(g) {
-  var rankDir = g.graph().rankdir.toLowerCase();
-  if (rankDir === "bt" || rankDir === "rl") {
-    reverseY(g);
-  }
-
-  if (rankDir === "lr" || rankDir === "rl") {
-    swapXY(g);
-    swapWidthHeight(g);
-  }
-}
-
-function swapWidthHeight(g) {
-  _.forEach(g.nodes(), function(v) { swapWidthHeightOne(g.node(v)); });
-  _.forEach(g.edges(), function(e) { swapWidthHeightOne(g.edge(e)); });
-}
-
-function swapWidthHeightOne(attrs) {
-  var w = attrs.width;
-  attrs.width = attrs.height;
-  attrs.height = w;
-}
-
-function reverseY(g) {
-  _.forEach(g.nodes(), function(v) { reverseYOne(g.node(v)); });
-
-  _.forEach(g.edges(), function(e) {
-    var edge = g.edge(e);
-    _.forEach(edge.points, reverseYOne);
-    if (_.has(edge, "y")) {
-      reverseYOne(edge);
-    }
-  });
-}
-
-function reverseYOne(attrs) {
-  attrs.y = -attrs.y;
-}
-
-function swapXY(g) {
-  _.forEach(g.nodes(), function(v) { swapXYOne(g.node(v)); });
-
-  _.forEach(g.edges(), function(e) {
-    var edge = g.edge(e);
-    _.forEach(edge.points, swapXYOne);
-    if (_.has(edge, "x")) {
-      swapXYOne(edge);
-    }
-  });
-}
-
-function swapXYOne(attrs) {
-  var x = attrs.x;
-  attrs.x = attrs.y;
-  attrs.y = x;
-}
-
-},{"./lodash":10}],5:[function(require,module,exports){
-/*
- * Simple doubly linked list implementation derived from Cormen, et al.,
- * "Introduction to Algorithms".
- */
-
-module.exports = List;
-
-function List() {
-  var sentinel = {};
-  sentinel._next = sentinel._prev = sentinel;
-  this._sentinel = sentinel;
-}
-
-List.prototype.dequeue = function() {
-  var sentinel = this._sentinel;
-  var entry = sentinel._prev;
-  if (entry !== sentinel) {
-    unlink(entry);
-    return entry;
-  }
-};
-
-List.prototype.enqueue = function(entry) {
-  var sentinel = this._sentinel;
-  if (entry._prev && entry._next) {
-    unlink(entry);
-  }
-  entry._next = sentinel._next;
-  sentinel._next._prev = entry;
-  sentinel._next = entry;
-  entry._prev = sentinel;
-};
-
-List.prototype.toString = function() {
-  var strs = [];
-  var sentinel = this._sentinel;
-  var curr = sentinel._prev;
-  while (curr !== sentinel) {
-    strs.push(JSON.stringify(curr, filterOutLinks));
-    curr = curr._prev;
-  }
-  return "[" + strs.join(", ") + "]";
-};
-
-function unlink(entry) {
-  entry._prev._next = entry._next;
-  entry._next._prev = entry._prev;
-  delete entry._next;
-  delete entry._prev;
-}
-
-function filterOutLinks(k, v) {
-  if (k !== "_next" && k !== "_prev") {
-    return v;
-  }
-}
-
-},{}],6:[function(require,module,exports){
-var _ = require("./lodash");
-var util = require("./util");
-var Graph = require("./graphlib").Graph;
-
-module.exports = {
-  debugOrdering: debugOrdering
-};
-
-/* istanbul ignore next */
-function debugOrdering(g) {
-  var layerMatrix = util.buildLayerMatrix(g);
-
-  var h = new Graph({ compound: true, multigraph: true }).setGraph({});
-
-  _.forEach(g.nodes(), function(v) {
-    h.setNode(v, { label: v });
-    h.setParent(v, "layer" + g.node(v).rank);
+  // index.ts
+  var index_exports = {};
+  __export(index_exports, {
+    Graph: () => Graph,
+    debug: () => debugOrdering,
+    default: () => index_default,
+    graphlib: () => graph_lib_exports,
+    layout: () => layout,
+    util: () => util,
+    version: () => version
   });
 
-  _.forEach(g.edges(), function(e) {
-    h.setEdge(e.v, e.w, {}, e.name);
+  // lib/graph-lib.ts
+  var graph_lib_exports = {};
+  __export(graph_lib_exports, {
+    Graph: () => Graph,
+    alg: () => F
   });
 
-  _.forEach(layerMatrix, function(layer, i) {
-    var layerV = "layer" + i;
-    h.setNode(layerV, { rank: "same" });
-    _.reduce(layer, function(u, v) {
-      h.setEdge(u, v, { style: "invis" });
-      return v;
-    });
-  });
-
-  return h;
-}
-
-},{"./graphlib":7,"./lodash":10,"./util":29}],7:[function(require,module,exports){
-/* global window */
-
-var graphlib;
-
-if (typeof require === "function") {
-  try {
-    graphlib = require("graphlib");
-  } catch (e) {
-    // continue regardless of error
-  }
-}
-
-if (!graphlib) {
-  graphlib = window.graphlib;
-}
-
-module.exports = graphlib;
-
-},{"graphlib":31}],8:[function(require,module,exports){
-var _ = require("./lodash");
-var Graph = require("./graphlib").Graph;
-var List = require("./data/list");
-
-/*
- * A greedy heuristic for finding a feedback arc set for a graph. A feedback
- * arc set is a set of edges that can be removed to make a graph acyclic.
- * The algorithm comes from: P. Eades, X. Lin, and W. F. Smyth, "A fast and
- * effective heuristic for the feedback arc set problem." This implementation
- * adjusts that from the paper to allow for weighted edges.
- */
-module.exports = greedyFAS;
-
-var DEFAULT_WEIGHT_FN = _.constant(1);
-
-function greedyFAS(g, weightFn) {
-  if (g.nodeCount() <= 1) {
-    return [];
-  }
-  var state = buildState(g, weightFn || DEFAULT_WEIGHT_FN);
-  var results = doGreedyFAS(state.graph, state.buckets, state.zeroIdx);
-
-  // Expand multi-edges
-  return _.flatten(_.map(results, function(e) {
-    return g.outEdges(e.v, e.w);
-  }), true);
-}
-
-function doGreedyFAS(g, buckets, zeroIdx) {
-  var results = [];
-  var sources = buckets[buckets.length - 1];
-  var sinks = buckets[0];
-
-  var entry;
-  while (g.nodeCount()) {
-    while ((entry = sinks.dequeue()))   { removeNode(g, buckets, zeroIdx, entry); }
-    while ((entry = sources.dequeue())) { removeNode(g, buckets, zeroIdx, entry); }
-    if (g.nodeCount()) {
-      for (var i = buckets.length - 2; i > 0; --i) {
-        entry = buckets[i].dequeue();
-        if (entry) {
-          results = results.concat(removeNode(g, buckets, zeroIdx, entry, true));
-          break;
-        }
-      }
-    }
-  }
-
-  return results;
-}
-
-function removeNode(g, buckets, zeroIdx, entry, collectPredecessors) {
-  var results = collectPredecessors ? [] : undefined;
-
-  _.forEach(g.inEdges(entry.v), function(edge) {
-    var weight = g.edge(edge);
-    var uEntry = g.node(edge.v);
-
-    if (collectPredecessors) {
-      results.push({ v: edge.v, w: edge.w });
-    }
-
-    uEntry.out -= weight;
-    assignBucket(buckets, zeroIdx, uEntry);
-  });
-
-  _.forEach(g.outEdges(entry.v), function(edge) {
-    var weight = g.edge(edge);
-    var w = edge.w;
-    var wEntry = g.node(w);
-    wEntry["in"] -= weight;
-    assignBucket(buckets, zeroIdx, wEntry);
-  });
-
-  g.removeNode(entry.v);
-
-  return results;
-}
-
-function buildState(g, weightFn) {
-  var fasGraph = new Graph();
-  var maxIn = 0;
-  var maxOut = 0;
-
-  _.forEach(g.nodes(), function(v) {
-    fasGraph.setNode(v, { v: v, "in": 0, out: 0 });
-  });
-
-  // Aggregate weights on nodes, but also sum the weights across multi-edges
-  // into a single edge for the fasGraph.
-  _.forEach(g.edges(), function(e) {
-    var prevWeight = fasGraph.edge(e.v, e.w) || 0;
-    var weight = weightFn(e);
-    var edgeWeight = prevWeight + weight;
-    fasGraph.setEdge(e.v, e.w, edgeWeight);
-    maxOut = Math.max(maxOut, fasGraph.node(e.v).out += weight);
-    maxIn  = Math.max(maxIn,  fasGraph.node(e.w)["in"]  += weight);
-  });
-
-  var buckets = _.range(maxOut + maxIn + 3).map(function() { return new List(); });
-  var zeroIdx = maxIn + 1;
-
-  _.forEach(fasGraph.nodes(), function(v) {
-    assignBucket(buckets, zeroIdx, fasGraph.node(v));
-  });
-
-  return { graph: fasGraph, buckets: buckets, zeroIdx: zeroIdx };
-}
-
-function assignBucket(buckets, zeroIdx, entry) {
-  if (!entry.out) {
-    buckets[0].enqueue(entry);
-  } else if (!entry["in"]) {
-    buckets[buckets.length - 1].enqueue(entry);
-  } else {
-    buckets[entry.out - entry["in"] + zeroIdx].enqueue(entry);
-  }
-}
-
-},{"./data/list":5,"./graphlib":7,"./lodash":10}],9:[function(require,module,exports){
-"use strict";
-
-var _ = require("./lodash");
-var acyclic = require("./acyclic");
-var normalize = require("./normalize");
-var rank = require("./rank");
-var normalizeRanks = require("./util").normalizeRanks;
-var parentDummyChains = require("./parent-dummy-chains");
-var removeEmptyRanks = require("./util").removeEmptyRanks;
-var nestingGraph = require("./nesting-graph");
-var addBorderSegments = require("./add-border-segments");
-var coordinateSystem = require("./coordinate-system");
-var order = require("./order");
-var position = require("./position");
-var util = require("./util");
-var Graph = require("./graphlib").Graph;
-
-module.exports = layout;
-
-function layout(g, opts) {
-  var time = opts && opts.debugTiming ? util.time : util.notime;
-  time("layout", function() {
-    var layoutGraph = 
-      time("  buildLayoutGraph", function() { return buildLayoutGraph(g); });
-    time("  runLayout",        function() { runLayout(layoutGraph, time); });
-    time("  updateInputGraph", function() { updateInputGraph(g, layoutGraph); });
-  });
-}
-
-function runLayout(g, time) {
-  time("    makeSpaceForEdgeLabels", function() { makeSpaceForEdgeLabels(g); });
-  time("    removeSelfEdges",        function() { removeSelfEdges(g); });
-  time("    acyclic",                function() { acyclic.run(g); });
-  time("    nestingGraph.run",       function() { nestingGraph.run(g); });
-  time("    rank",                   function() { rank(util.asNonCompoundGraph(g)); });
-  time("    injectEdgeLabelProxies", function() { injectEdgeLabelProxies(g); });
-  time("    removeEmptyRanks",       function() { removeEmptyRanks(g); });
-  time("    nestingGraph.cleanup",   function() { nestingGraph.cleanup(g); });
-  time("    normalizeRanks",         function() { normalizeRanks(g); });
-  time("    assignRankMinMax",       function() { assignRankMinMax(g); });
-  time("    removeEdgeLabelProxies", function() { removeEdgeLabelProxies(g); });
-  time("    normalize.run",          function() { normalize.run(g); });
-  time("    parentDummyChains",      function() { parentDummyChains(g); });
-  time("    addBorderSegments",      function() { addBorderSegments(g); });
-  time("    order",                  function() { order(g); });
-  time("    insertSelfEdges",        function() { insertSelfEdges(g); });
-  time("    adjustCoordinateSystem", function() { coordinateSystem.adjust(g); });
-  time("    position",               function() { position(g); });
-  time("    positionSelfEdges",      function() { positionSelfEdges(g); });
-  time("    removeBorderNodes",      function() { removeBorderNodes(g); });
-  time("    normalize.undo",         function() { normalize.undo(g); });
-  time("    fixupEdgeLabelCoords",   function() { fixupEdgeLabelCoords(g); });
-  time("    undoCoordinateSystem",   function() { coordinateSystem.undo(g); });
-  time("    translateGraph",         function() { translateGraph(g); });
-  time("    assignNodeIntersects",   function() { assignNodeIntersects(g); });
-  time("    reversePoints",          function() { reversePointsForReversedEdges(g); });
-  time("    acyclic.undo",           function() { acyclic.undo(g); });
-}
-
-/*
- * Copies final layout information from the layout graph back to the input
- * graph. This process only copies whitelisted attributes from the layout graph
- * to the input graph, so it serves as a good place to determine what
- * attributes can influence layout.
- */
-function updateInputGraph(inputGraph, layoutGraph) {
-  _.forEach(inputGraph.nodes(), function(v) {
-    var inputLabel = inputGraph.node(v);
-    var layoutLabel = layoutGraph.node(v);
-
-    if (inputLabel) {
-      inputLabel.x = layoutLabel.x;
-      inputLabel.y = layoutLabel.y;
-
-      if (layoutGraph.children(v).length) {
-        inputLabel.width = layoutLabel.width;
-        inputLabel.height = layoutLabel.height;
-      }
-    }
-  });
-
-  _.forEach(inputGraph.edges(), function(e) {
-    var inputLabel = inputGraph.edge(e);
-    var layoutLabel = layoutGraph.edge(e);
-
-    inputLabel.points = layoutLabel.points;
-    if (_.has(layoutLabel, "x")) {
-      inputLabel.x = layoutLabel.x;
-      inputLabel.y = layoutLabel.y;
-    }
-  });
-
-  inputGraph.graph().width = layoutGraph.graph().width;
-  inputGraph.graph().height = layoutGraph.graph().height;
-}
-
-var graphNumAttrs = ["nodesep", "edgesep", "ranksep", "marginx", "marginy"];
-var graphDefaults = { ranksep: 50, edgesep: 20, nodesep: 50, rankdir: "tb" };
-var graphAttrs = ["acyclicer", "ranker", "rankdir", "align"];
-var nodeNumAttrs = ["width", "height"];
-var nodeDefaults = { width: 0, height: 0 };
-var edgeNumAttrs = ["minlen", "weight", "width", "height", "labeloffset"];
-var edgeDefaults = {
-  minlen: 1, weight: 1, width: 0, height: 0,
-  labeloffset: 10, labelpos: "r"
-};
-var edgeAttrs = ["labelpos"];
-
-/*
- * Constructs a new graph from the input graph, which can be used for layout.
- * This process copies only whitelisted attributes from the input graph to the
- * layout graph. Thus this function serves as a good place to determine what
- * attributes can influence layout.
- */
-function buildLayoutGraph(inputGraph) {
-  var g = new Graph({ multigraph: true, compound: true });
-  var graph = canonicalize(inputGraph.graph());
-
-  g.setGraph(_.merge({},
-    graphDefaults,
-    selectNumberAttrs(graph, graphNumAttrs),
-    _.pick(graph, graphAttrs)));
-
-  _.forEach(inputGraph.nodes(), function(v) {
-    var node = canonicalize(inputGraph.node(v));
-    g.setNode(v, _.defaults(selectNumberAttrs(node, nodeNumAttrs), nodeDefaults));
-    g.setParent(v, inputGraph.parent(v));
-  });
-
-  _.forEach(inputGraph.edges(), function(e) {
-    var edge = canonicalize(inputGraph.edge(e));
-    g.setEdge(e, _.merge({},
-      edgeDefaults,
-      selectNumberAttrs(edge, edgeNumAttrs),
-      _.pick(edge, edgeAttrs)));
-  });
-
-  return g;
-}
-
-/*
- * This idea comes from the Gansner paper: to account for edge labels in our
- * layout we split each rank in half by doubling minlen and halving ranksep.
- * Then we can place labels at these mid-points between nodes.
- *
- * We also add some minimal padding to the width to push the label for the edge
- * away from the edge itself a bit.
- */
-function makeSpaceForEdgeLabels(g) {
-  var graph = g.graph();
-  graph.ranksep /= 2;
-  _.forEach(g.edges(), function(e) {
-    var edge = g.edge(e);
-    edge.minlen *= 2;
-    if (edge.labelpos.toLowerCase() !== "c") {
-      if (graph.rankdir === "TB" || graph.rankdir === "BT") {
-        edge.width += edge.labeloffset;
-      } else {
-        edge.height += edge.labeloffset;
-      }
-    }
-  });
-}
-
-/*
- * Creates temporary dummy nodes that capture the rank in which each edge's
- * label is going to, if it has one of non-zero width and height. We do this
- * so that we can safely remove empty ranks while preserving balance for the
- * label's position.
- */
-function injectEdgeLabelProxies(g) {
-  _.forEach(g.edges(), function(e) {
-    var edge = g.edge(e);
-    if (edge.width && edge.height) {
-      var v = g.node(e.v);
-      var w = g.node(e.w);
-      var label = { rank: (w.rank - v.rank) / 2 + v.rank, e: e };
-      util.addDummyNode(g, "edge-proxy", label, "_ep");
-    }
-  });
-}
-
-function assignRankMinMax(g) {
-  var maxRank = 0;
-  _.forEach(g.nodes(), function(v) {
-    var node = g.node(v);
-    if (node.borderTop) {
-      node.minRank = g.node(node.borderTop).rank;
-      node.maxRank = g.node(node.borderBottom).rank;
-      maxRank = _.max(maxRank, node.maxRank);
-    }
-  });
-  g.graph().maxRank = maxRank;
-}
-
-function removeEdgeLabelProxies(g) {
-  _.forEach(g.nodes(), function(v) {
-    var node = g.node(v);
-    if (node.dummy === "edge-proxy") {
-      g.edge(node.e).labelRank = node.rank;
-      g.removeNode(v);
-    }
-  });
-}
-
-function translateGraph(g) {
-  var minX = Number.POSITIVE_INFINITY;
-  var maxX = 0;
-  var minY = Number.POSITIVE_INFINITY;
-  var maxY = 0;
-  var graphLabel = g.graph();
-  var marginX = graphLabel.marginx || 0;
-  var marginY = graphLabel.marginy || 0;
-
-  function getExtremes(attrs) {
-    var x = attrs.x;
-    var y = attrs.y;
-    var w = attrs.width;
-    var h = attrs.height;
-    minX = Math.min(minX, x - w / 2);
-    maxX = Math.max(maxX, x + w / 2);
-    minY = Math.min(minY, y - h / 2);
-    maxY = Math.max(maxY, y + h / 2);
-  }
-
-  _.forEach(g.nodes(), function(v) { getExtremes(g.node(v)); });
-  _.forEach(g.edges(), function(e) {
-    var edge = g.edge(e);
-    if (_.has(edge, "x")) {
-      getExtremes(edge);
-    }
-  });
-
-  minX -= marginX;
-  minY -= marginY;
-
-  _.forEach(g.nodes(), function(v) {
-    var node = g.node(v);
-    node.x -= minX;
-    node.y -= minY;
-  });
-
-  _.forEach(g.edges(), function(e) {
-    var edge = g.edge(e);
-    _.forEach(edge.points, function(p) {
-      p.x -= minX;
-      p.y -= minY;
-    });
-    if (_.has(edge, "x")) { edge.x -= minX; }
-    if (_.has(edge, "y")) { edge.y -= minY; }
-  });
-
-  graphLabel.width = maxX - minX + marginX;
-  graphLabel.height = maxY - minY + marginY;
-}
-
-function assignNodeIntersects(g) {
-  _.forEach(g.edges(), function(e) {
-    var edge = g.edge(e);
-    var nodeV = g.node(e.v);
-    var nodeW = g.node(e.w);
-    var p1, p2;
-    if (!edge.points) {
-      edge.points = [];
-      p1 = nodeW;
-      p2 = nodeV;
-    } else {
-      p1 = edge.points[0];
-      p2 = edge.points[edge.points.length - 1];
-    }
-    edge.points.unshift(util.intersectRect(nodeV, p1));
-    edge.points.push(util.intersectRect(nodeW, p2));
-  });
-}
-
-function fixupEdgeLabelCoords(g) {
-  _.forEach(g.edges(), function(e) {
-    var edge = g.edge(e);
-    if (_.has(edge, "x")) {
-      if (edge.labelpos === "l" || edge.labelpos === "r") {
-        edge.width -= edge.labeloffset;
-      }
-      switch (edge.labelpos) {
-      case "l": edge.x -= edge.width / 2 + edge.labeloffset; break;
-      case "r": edge.x += edge.width / 2 + edge.labeloffset; break;
-      }
-    }
-  });
-}
-
-function reversePointsForReversedEdges(g) {
-  _.forEach(g.edges(), function(e) {
-    var edge = g.edge(e);
-    if (edge.reversed) {
-      edge.points.reverse();
-    }
-  });
-}
-
-function removeBorderNodes(g) {
-  _.forEach(g.nodes(), function(v) {
-    if (g.children(v).length) {
-      var node = g.node(v);
-      var t = g.node(node.borderTop);
-      var b = g.node(node.borderBottom);
-      var l = g.node(_.last(node.borderLeft));
-      var r = g.node(_.last(node.borderRight));
-
-      node.width = Math.abs(r.x - l.x);
-      node.height = Math.abs(b.y - t.y);
-      node.x = l.x + node.width / 2;
-      node.y = t.y + node.height / 2;
-    }
-  });
-
-  _.forEach(g.nodes(), function(v) {
-    if (g.node(v).dummy === "border") {
-      g.removeNode(v);
-    }
-  });
-}
-
-function removeSelfEdges(g) {
-  _.forEach(g.edges(), function(e) {
-    if (e.v === e.w) {
-      var node = g.node(e.v);
-      if (!node.selfEdges) {
-        node.selfEdges = [];
-      }
-      node.selfEdges.push({ e: e, label: g.edge(e) });
-      g.removeEdge(e);
-    }
-  });
-}
-
-function insertSelfEdges(g) {
-  var layers = util.buildLayerMatrix(g);
-  _.forEach(layers, function(layer) {
-    var orderShift = 0;
-    _.forEach(layer, function(v, i) {
-      var node = g.node(v);
-      node.order = i + orderShift;
-      _.forEach(node.selfEdges, function(selfEdge) {
-        util.addDummyNode(g, "selfedge", {
-          width: selfEdge.label.width,
-          height: selfEdge.label.height,
-          rank: node.rank,
-          order: i + (++orderShift),
-          e: selfEdge.e,
-          label: selfEdge.label
-        }, "_se");
-      });
-      delete node.selfEdges;
-    });
-  });
-}
-
-function positionSelfEdges(g) {
-  _.forEach(g.nodes(), function(v) {
-    var node = g.node(v);
-    if (node.dummy === "selfedge") {
-      var selfNode = g.node(node.e.v);
-      var x = selfNode.x + selfNode.width / 2;
-      var y = selfNode.y;
-      var dx = node.x - x;
-      var dy = selfNode.height / 2;
-      g.setEdge(node.e, node.label);
-      g.removeNode(v);
-      node.label.points = [
-        { x: x + 2 * dx / 3, y: y - dy },
-        { x: x + 5 * dx / 6, y: y - dy },
-        { x: x +     dx    , y: y },
-        { x: x + 5 * dx / 6, y: y + dy },
-        { x: x + 2 * dx / 3, y: y + dy }
-      ];
-      node.label.x = node.x;
-      node.label.y = node.y;
-    }
-  });
-}
-
-function selectNumberAttrs(obj, attrs) {
-  return _.mapValues(_.pick(obj, attrs), Number);
-}
-
-function canonicalize(attrs) {
-  var newAttrs = {};
-  _.forEach(attrs, function(v, k) {
-    newAttrs[k.toLowerCase()] = v;
-  });
-  return newAttrs;
-}
-
-},{"./acyclic":2,"./add-border-segments":3,"./coordinate-system":4,"./graphlib":7,"./lodash":10,"./nesting-graph":11,"./normalize":12,"./order":17,"./parent-dummy-chains":22,"./position":24,"./rank":26,"./util":29}],10:[function(require,module,exports){
-/* global window */
-
-var lodash;
-
-if (typeof require === "function") {
-  try {
-    lodash = {
-      cloneDeep: require("lodash/cloneDeep"),
-      constant: require("lodash/constant"),
-      defaults: require("lodash/defaults"),
-      each: require("lodash/each"),
-      filter: require("lodash/filter"),
-      find: require("lodash/find"),
-      flatten: require("lodash/flatten"),
-      forEach: require("lodash/forEach"),
-      forIn: require("lodash/forIn"),
-      has:  require("lodash/has"),
-      isUndefined: require("lodash/isUndefined"),
-      last: require("lodash/last"),
-      map: require("lodash/map"),
-      mapValues: require("lodash/mapValues"),
-      max: require("lodash/max"),
-      merge: require("lodash/merge"),
-      min: require("lodash/min"),
-      minBy: require("lodash/minBy"),
-      now: require("lodash/now"),
-      pick: require("lodash/pick"),
-      range: require("lodash/range"),
-      reduce: require("lodash/reduce"),
-      sortBy: require("lodash/sortBy"),
-      uniqueId: require("lodash/uniqueId"),
-      values: require("lodash/values"),
-      zipObject: require("lodash/zipObject"),
-    };
-  } catch (e) {
-    // continue regardless of error
-  }
-}
-
-if (!lodash) {
-  lodash = window._;
-}
-
-module.exports = lodash;
-
-},{"lodash/cloneDeep":227,"lodash/constant":228,"lodash/defaults":229,"lodash/each":230,"lodash/filter":232,"lodash/find":233,"lodash/flatten":235,"lodash/forEach":236,"lodash/forIn":237,"lodash/has":239,"lodash/isUndefined":258,"lodash/last":261,"lodash/map":262,"lodash/mapValues":263,"lodash/max":264,"lodash/merge":266,"lodash/min":267,"lodash/minBy":268,"lodash/now":270,"lodash/pick":271,"lodash/range":273,"lodash/reduce":274,"lodash/sortBy":276,"lodash/uniqueId":286,"lodash/values":287,"lodash/zipObject":288}],11:[function(require,module,exports){
-var _ = require("./lodash");
-var util = require("./util");
-
-module.exports = {
-  run: run,
-  cleanup: cleanup
-};
-
-/*
- * A nesting graph creates dummy nodes for the tops and bottoms of subgraphs,
- * adds appropriate edges to ensure that all cluster nodes are placed between
- * these boundries, and ensures that the graph is connected.
- *
- * In addition we ensure, through the use of the minlen property, that nodes
- * and subgraph border nodes to not end up on the same rank.
- *
- * Preconditions:
- *
- *    1. Input graph is a DAG
- *    2. Nodes in the input graph has a minlen attribute
- *
- * Postconditions:
- *
- *    1. Input graph is connected.
- *    2. Dummy nodes are added for the tops and bottoms of subgraphs.
- *    3. The minlen attribute for nodes is adjusted to ensure nodes do not
- *       get placed on the same rank as subgraph border nodes.
- *
- * The nesting graph idea comes from Sander, "Layout of Compound Directed
- * Graphs."
- */
-function run(g) {
-  var root = util.addDummyNode(g, "root", {}, "_root");
-  var depths = treeDepths(g);
-  var height = _.max(_.values(depths)) - 1; // Note: depths is an Object not an array
-  var nodeSep = 2 * height + 1;
-
-  g.graph().nestingRoot = root;
-
-  // Multiply minlen by nodeSep to align nodes on non-border ranks.
-  _.forEach(g.edges(), function(e) { g.edge(e).minlen *= nodeSep; });
-
-  // Calculate a weight that is sufficient to keep subgraphs vertically compact
-  var weight = sumWeights(g) + 1;
-
-  // Create border nodes and link them up
-  _.forEach(g.children(), function(child) {
-    dfs(g, root, nodeSep, weight, height, depths, child);
-  });
-
-  // Save the multiplier for node layers for later removal of empty border
-  // layers.
-  g.graph().nodeRankFactor = nodeSep;
-}
-
-function dfs(g, root, nodeSep, weight, height, depths, v) {
-  var children = g.children(v);
-  if (!children.length) {
-    if (v !== root) {
-      g.setEdge(root, v, { weight: 0, minlen: nodeSep });
-    }
-    return;
-  }
-
-  var top = util.addBorderNode(g, "_bt");
-  var bottom = util.addBorderNode(g, "_bb");
-  var label = g.node(v);
-
-  g.setParent(top, v);
-  label.borderTop = top;
-  g.setParent(bottom, v);
-  label.borderBottom = bottom;
-
-  _.forEach(children, function(child) {
-    dfs(g, root, nodeSep, weight, height, depths, child);
-
-    var childNode = g.node(child);
-    var childTop = childNode.borderTop ? childNode.borderTop : child;
-    var childBottom = childNode.borderBottom ? childNode.borderBottom : child;
-    var thisWeight = childNode.borderTop ? weight : 2 * weight;
-    var minlen = childTop !== childBottom ? 1 : height - depths[v] + 1;
-
-    g.setEdge(top, childTop, {
-      weight: thisWeight,
-      minlen: minlen,
-      nestingEdge: true
-    });
-
-    g.setEdge(childBottom, bottom, {
-      weight: thisWeight,
-      minlen: minlen,
-      nestingEdge: true
-    });
-  });
-
-  if (!g.parent(v)) {
-    g.setEdge(root, top, { weight: 0, minlen: height + depths[v] });
-  }
-}
-
-function treeDepths(g) {
-  var depths = {};
-  function dfs(v, depth) {
-    var children = g.children(v);
-    if (children && children.length) {
-      _.forEach(children, function(child) {
-        dfs(child, depth + 1);
-      });
-    }
-    depths[v] = depth;
-  }
-  _.forEach(g.children(), function(v) { dfs(v, 1); });
-  return depths;
-}
-
-function sumWeights(g) {
-  return _.reduce(g.edges(), function(acc, e) {
-    return acc + g.edge(e).weight;
-  }, 0);
-}
-
-function cleanup(g) {
-  var graphLabel = g.graph();
-  g.removeNode(graphLabel.nestingRoot);
-  delete graphLabel.nestingRoot;
-  _.forEach(g.edges(), function(e) {
-    var edge = g.edge(e);
-    if (edge.nestingEdge) {
-      g.removeEdge(e);
-    }
-  });
-}
-
-},{"./lodash":10,"./util":29}],12:[function(require,module,exports){
-"use strict";
-
-var _ = require("./lodash");
-var util = require("./util");
-
-module.exports = {
-  run: run,
-  undo: undo
-};
-
-/*
- * Breaks any long edges in the graph into short segments that span 1 layer
- * each. This operation is undoable with the denormalize function.
- *
- * Pre-conditions:
- *
- *    1. The input graph is a DAG.
- *    2. Each node in the graph has a "rank" property.
- *
- * Post-condition:
- *
- *    1. All edges in the graph have a length of 1.
- *    2. Dummy nodes are added where edges have been split into segments.
- *    3. The graph is augmented with a "dummyChains" attribute which contains
- *       the first dummy in each chain of dummy nodes produced.
- */
-function run(g) {
-  g.graph().dummyChains = [];
-  _.forEach(g.edges(), function(edge) { normalizeEdge(g, edge); });
-}
-
-function normalizeEdge(g, e) {
-  var v = e.v;
-  var vRank = g.node(v).rank;
-  var w = e.w;
-  var wRank = g.node(w).rank;
-  var name = e.name;
-  var edgeLabel = g.edge(e);
-  var labelRank = edgeLabel.labelRank;
-
-  if (wRank === vRank + 1) return;
-
-  g.removeEdge(e);
-
-  var dummy, attrs, i;
-  for (i = 0, ++vRank; vRank < wRank; ++i, ++vRank) {
-    edgeLabel.points = [];
-    attrs = {
-      width: 0, height: 0,
-      edgeLabel: edgeLabel, edgeObj: e,
-      rank: vRank
-    };
-    dummy = util.addDummyNode(g, "edge", attrs, "_d");
-    if (vRank === labelRank) {
-      attrs.width = edgeLabel.width;
-      attrs.height = edgeLabel.height;
-      attrs.dummy = "edge-label";
-      attrs.labelpos = edgeLabel.labelpos;
-    }
-    g.setEdge(v, dummy, { weight: edgeLabel.weight }, name);
-    if (i === 0) {
-      g.graph().dummyChains.push(dummy);
-    }
-    v = dummy;
-  }
-
-  g.setEdge(v, w, { weight: edgeLabel.weight }, name);
-}
-
-function undo(g) {
-  _.forEach(g.graph().dummyChains, function(v) {
-    var node = g.node(v);
-    var origLabel = node.edgeLabel;
-    var w;
-    g.setEdge(node.edgeObj, origLabel);
-    while (node.dummy) {
-      w = g.successors(v)[0];
-      g.removeNode(v);
-      origLabel.points.push({ x: node.x, y: node.y });
-      if (node.dummy === "edge-label") {
-        origLabel.x = node.x;
-        origLabel.y = node.y;
-        origLabel.width = node.width;
-        origLabel.height = node.height;
-      }
-      v = w;
-      node = g.node(v);
-    }
-  });
-}
-
-},{"./lodash":10,"./util":29}],13:[function(require,module,exports){
-var _ = require("../lodash");
-
-module.exports = addSubgraphConstraints;
-
-function addSubgraphConstraints(g, cg, vs) {
-  var prev = {},
-    rootPrev;
-
-  _.forEach(vs, function(v) {
-    var child = g.parent(v),
-      parent,
-      prevChild;
-    while (child) {
-      parent = g.parent(child);
-      if (parent) {
-        prevChild = prev[parent];
-        prev[parent] = child;
-      } else {
-        prevChild = rootPrev;
-        rootPrev = child;
-      }
-      if (prevChild && prevChild !== child) {
-        cg.setEdge(prevChild, child);
-        return;
-      }
-      child = parent;
-    }
-  });
-
-  /*
-  function dfs(v) {
-    var children = v ? g.children(v) : g.children();
-    if (children.length) {
-      var min = Number.POSITIVE_INFINITY,
-          subgraphs = [];
-      _.each(children, function(child) {
-        var childMin = dfs(child);
-        if (g.children(child).length) {
-          subgraphs.push({ v: child, order: childMin });
-        }
-        min = Math.min(min, childMin);
-      });
-      _.reduce(_.sortBy(subgraphs, "order"), function(prev, curr) {
-        cg.setEdge(prev.v, curr.v);
-        return curr;
-      });
-      return min;
-    }
-    return g.node(v).order;
-  }
-  dfs(undefined);
-  */
-}
-
-},{"../lodash":10}],14:[function(require,module,exports){
-var _ = require("../lodash");
-
-module.exports = barycenter;
-
-function barycenter(g, movable) {
-  return _.map(movable, function(v) {
-    var inV = g.inEdges(v);
-    if (!inV.length) {
-      return { v: v };
-    } else {
-      var result = _.reduce(inV, function(acc, e) {
-        var edge = g.edge(e),
-          nodeU = g.node(e.v);
-        return {
-          sum: acc.sum + (edge.weight * nodeU.order),
-          weight: acc.weight + edge.weight
-        };
-      }, { sum: 0, weight: 0 });
-
-      return {
-        v: v,
-        barycenter: result.sum / result.weight,
-        weight: result.weight
+  // node_modules/@dagrejs/graphlib/dist/graphlib.esm.js
+  var V = Object.defineProperty;
+  var x = (s, e) => {
+    for (var t in e) V(s, t, { get: e[t], enumerable: true });
+  };
+  var p = class {
+    constructor(e) {
+      this._isDirected = true;
+      this._isMultigraph = false;
+      this._isCompound = false;
+      this._nodes = {};
+      this._in = {};
+      this._preds = {};
+      this._out = {};
+      this._sucs = {};
+      this._edgeObjs = {};
+      this._edgeLabels = {};
+      this._nodeCount = 0;
+      this._edgeCount = 0;
+      this._defaultNodeLabelFn = () => {
       };
+      this._defaultEdgeLabelFn = () => {
+      };
+      e && (this._isDirected = "directed" in e ? e.directed : true, this._isMultigraph = "multigraph" in e ? e.multigraph : false, this._isCompound = "compound" in e ? e.compound : false), this._isCompound && (this._parent = {}, this._children = {}, this._children["\0"] = {});
     }
-  });
-}
-
-
-},{"../lodash":10}],15:[function(require,module,exports){
-var _ = require("../lodash");
-var Graph = require("../graphlib").Graph;
-
-module.exports = buildLayerGraph;
-
-/*
- * Constructs a graph that can be used to sort a layer of nodes. The graph will
- * contain all base and subgraph nodes from the request layer in their original
- * hierarchy and any edges that are incident on these nodes and are of the type
- * requested by the "relationship" parameter.
- *
- * Nodes from the requested rank that do not have parents are assigned a root
- * node in the output graph, which is set in the root graph attribute. This
- * makes it easy to walk the hierarchy of movable nodes during ordering.
- *
- * Pre-conditions:
- *
- *    1. Input graph is a DAG
- *    2. Base nodes in the input graph have a rank attribute
- *    3. Subgraph nodes in the input graph has minRank and maxRank attributes
- *    4. Edges have an assigned weight
- *
- * Post-conditions:
- *
- *    1. Output graph has all nodes in the movable rank with preserved
- *       hierarchy.
- *    2. Root nodes in the movable layer are made children of the node
- *       indicated by the root attribute of the graph.
- *    3. Non-movable nodes incident on movable nodes, selected by the
- *       relationship parameter, are included in the graph (without hierarchy).
- *    4. Edges incident on movable nodes, selected by the relationship
- *       parameter, are added to the output graph.
- *    5. The weights for copied edges are aggregated as need, since the output
- *       graph is not a multi-graph.
- */
-function buildLayerGraph(g, rank, relationship) {
-  var root = createRootNode(g),
-    result = new Graph({ compound: true }).setGraph({ root: root })
-      .setDefaultNodeLabel(function(v) { return g.node(v); });
-
-  _.forEach(g.nodes(), function(v) {
-    var node = g.node(v),
-      parent = g.parent(v);
-
-    if (node.rank === rank || node.minRank <= rank && rank <= node.maxRank) {
-      result.setNode(v);
-      result.setParent(v, parent || root);
-
-      // This assumes we have only short edges!
-      _.forEach(g[relationship](v), function(e) {
-        var u = e.v === v ? e.w : e.v,
-          edge = result.edge(u, v),
-          weight = !_.isUndefined(edge) ? edge.weight : 0;
-        result.setEdge(u, v, { weight: g.edge(e).weight + weight });
-      });
-
-      if (_.has(node, "minRank")) {
-        result.setNode(v, {
-          borderLeft: node.borderLeft[rank],
-          borderRight: node.borderRight[rank]
-        });
+    isDirected() {
+      return this._isDirected;
+    }
+    isMultigraph() {
+      return this._isMultigraph;
+    }
+    isCompound() {
+      return this._isCompound;
+    }
+    setGraph(e) {
+      return this._label = e, this;
+    }
+    graph() {
+      return this._label;
+    }
+    setDefaultNodeLabel(e) {
+      return typeof e != "function" ? this._defaultNodeLabelFn = () => e : this._defaultNodeLabelFn = e, this;
+    }
+    nodeCount() {
+      return this._nodeCount;
+    }
+    nodes() {
+      return Object.keys(this._nodes);
+    }
+    sources() {
+      return this.nodes().filter((e) => Object.keys(this._in[e]).length === 0);
+    }
+    sinks() {
+      return this.nodes().filter((e) => Object.keys(this._out[e]).length === 0);
+    }
+    setNodes(e, t) {
+      return e.forEach((r) => {
+        t !== void 0 ? this.setNode(r, t) : this.setNode(r);
+      }), this;
+    }
+    setNode(e, t) {
+      return e in this._nodes ? (arguments.length > 1 && (this._nodes[e] = t), this) : (this._nodes[e] = arguments.length > 1 ? t : this._defaultNodeLabelFn(e), this._isCompound && (this._parent[e] = "\0", this._children[e] = {}, this._children["\0"][e] = true), this._in[e] = {}, this._preds[e] = {}, this._out[e] = {}, this._sucs[e] = {}, ++this._nodeCount, this);
+    }
+    node(e) {
+      return this._nodes[e];
+    }
+    hasNode(e) {
+      return e in this._nodes;
+    }
+    removeNode(e) {
+      if (e in this._nodes) {
+        let t = (r) => this.removeEdge(this._edgeObjs[r]);
+        delete this._nodes[e], this._isCompound && (this._removeFromParentsChildList(e), delete this._parent[e], this.children(e).forEach((r) => {
+          this.setParent(r);
+        }), delete this._children[e]), Object.keys(this._in[e]).forEach(t), delete this._in[e], delete this._preds[e], Object.keys(this._out[e]).forEach(t), delete this._out[e], delete this._sucs[e], --this._nodeCount;
       }
-    }
-  });
-
-  return result;
-}
-
-function createRootNode(g) {
-  var v;
-  while (g.hasNode((v = _.uniqueId("_root"))));
-  return v;
-}
-
-},{"../graphlib":7,"../lodash":10}],16:[function(require,module,exports){
-"use strict";
-
-var _ = require("../lodash");
-
-module.exports = crossCount;
-
-/*
- * A function that takes a layering (an array of layers, each with an array of
- * ordererd nodes) and a graph and returns a weighted crossing count.
- *
- * Pre-conditions:
- *
- *    1. Input graph must be simple (not a multigraph), directed, and include
- *       only simple edges.
- *    2. Edges in the input graph must have assigned weights.
- *
- * Post-conditions:
- *
- *    1. The graph and layering matrix are left unchanged.
- *
- * This algorithm is derived from Barth, et al., "Bilayer Cross Counting."
- */
-function crossCount(g, layering) {
-  var cc = 0;
-  for (var i = 1; i < layering.length; ++i) {
-    cc += twoLayerCrossCount(g, layering[i-1], layering[i]);
-  }
-  return cc;
-}
-
-function twoLayerCrossCount(g, northLayer, southLayer) {
-  // Sort all of the edges between the north and south layers by their position
-  // in the north layer and then the south. Map these edges to the position of
-  // their head in the south layer.
-  var southPos = _.zipObject(southLayer,
-    _.map(southLayer, function (v, i) { return i; }));
-  var southEntries = _.flatten(_.map(northLayer, function(v) {
-    return _.sortBy(_.map(g.outEdges(v), function(e) {
-      return { pos: southPos[e.w], weight: g.edge(e).weight };
-    }), "pos");
-  }), true);
-
-  // Build the accumulator tree
-  var firstIndex = 1;
-  while (firstIndex < southLayer.length) firstIndex <<= 1;
-  var treeSize = 2 * firstIndex - 1;
-  firstIndex -= 1;
-  var tree = _.map(new Array(treeSize), function() { return 0; });
-
-  // Calculate the weighted crossings
-  var cc = 0;
-  _.forEach(southEntries.forEach(function(entry) {
-    var index = entry.pos + firstIndex;
-    tree[index] += entry.weight;
-    var weightSum = 0;
-    while (index > 0) {
-      if (index % 2) {
-        weightSum += tree[index + 1];
-      }
-      index = (index - 1) >> 1;
-      tree[index] += entry.weight;
-    }
-    cc += entry.weight * weightSum;
-  }));
-
-  return cc;
-}
-
-},{"../lodash":10}],17:[function(require,module,exports){
-"use strict";
-
-var _ = require("../lodash");
-var initOrder = require("./init-order");
-var crossCount = require("./cross-count");
-var sortSubgraph = require("./sort-subgraph");
-var buildLayerGraph = require("./build-layer-graph");
-var addSubgraphConstraints = require("./add-subgraph-constraints");
-var Graph = require("../graphlib").Graph;
-var util = require("../util");
-
-module.exports = order;
-
-/*
- * Applies heuristics to minimize edge crossings in the graph and sets the best
- * order solution as an order attribute on each node.
- *
- * Pre-conditions:
- *
- *    1. Graph must be DAG
- *    2. Graph nodes must be objects with a "rank" attribute
- *    3. Graph edges must have the "weight" attribute
- *
- * Post-conditions:
- *
- *    1. Graph nodes will have an "order" attribute based on the results of the
- *       algorithm.
- */
-function order(g) {
-  var maxRank = util.maxRank(g),
-    downLayerGraphs = buildLayerGraphs(g, _.range(1, maxRank + 1), "inEdges"),
-    upLayerGraphs = buildLayerGraphs(g, _.range(maxRank - 1, -1, -1), "outEdges");
-
-  var layering = initOrder(g);
-  assignOrder(g, layering);
-
-  var bestCC = Number.POSITIVE_INFINITY,
-    best;
-
-  for (var i = 0, lastBest = 0; lastBest < 4; ++i, ++lastBest) {
-    sweepLayerGraphs(i % 2 ? downLayerGraphs : upLayerGraphs, i % 4 >= 2);
-
-    layering = util.buildLayerMatrix(g);
-    var cc = crossCount(g, layering);
-    if (cc < bestCC) {
-      lastBest = 0;
-      best = _.cloneDeep(layering);
-      bestCC = cc;
-    }
-  }
-
-  assignOrder(g, best);
-}
-
-function buildLayerGraphs(g, ranks, relationship) {
-  return _.map(ranks, function(rank) {
-    return buildLayerGraph(g, rank, relationship);
-  });
-}
-
-function sweepLayerGraphs(layerGraphs, biasRight) {
-  var cg = new Graph();
-  _.forEach(layerGraphs, function(lg) {
-    var root = lg.graph().root;
-    var sorted = sortSubgraph(lg, root, cg, biasRight);
-    _.forEach(sorted.vs, function(v, i) {
-      lg.node(v).order = i;
-    });
-    addSubgraphConstraints(lg, cg, sorted.vs);
-  });
-}
-
-function assignOrder(g, layering) {
-  _.forEach(layering, function(layer) {
-    _.forEach(layer, function(v, i) {
-      g.node(v).order = i;
-    });
-  });
-}
-
-},{"../graphlib":7,"../lodash":10,"../util":29,"./add-subgraph-constraints":13,"./build-layer-graph":15,"./cross-count":16,"./init-order":18,"./sort-subgraph":20}],18:[function(require,module,exports){
-"use strict";
-
-var _ = require("../lodash");
-
-module.exports = initOrder;
-
-/*
- * Assigns an initial order value for each node by performing a DFS search
- * starting from nodes in the first rank. Nodes are assigned an order in their
- * rank as they are first visited.
- *
- * This approach comes from Gansner, et al., "A Technique for Drawing Directed
- * Graphs."
- *
- * Returns a layering matrix with an array per layer and each layer sorted by
- * the order of its nodes.
- */
-function initOrder(g) {
-  var visited = {};
-  var simpleNodes = _.filter(g.nodes(), function(v) {
-    return !g.children(v).length;
-  });
-  var maxRank = _.max(_.map(simpleNodes, function(v) { return g.node(v).rank; }));
-  var layers = _.map(_.range(maxRank + 1), function() { return []; });
-
-  function dfs(v) {
-    if (_.has(visited, v)) return;
-    visited[v] = true;
-    var node = g.node(v);
-    layers[node.rank].push(v);
-    _.forEach(g.successors(v), dfs);
-  }
-
-  var orderedVs = _.sortBy(simpleNodes, function(v) { return g.node(v).rank; });
-  _.forEach(orderedVs, dfs);
-
-  return layers;
-}
-
-},{"../lodash":10}],19:[function(require,module,exports){
-"use strict";
-
-var _ = require("../lodash");
-
-module.exports = resolveConflicts;
-
-/*
- * Given a list of entries of the form {v, barycenter, weight} and a
- * constraint graph this function will resolve any conflicts between the
- * constraint graph and the barycenters for the entries. If the barycenters for
- * an entry would violate a constraint in the constraint graph then we coalesce
- * the nodes in the conflict into a new node that respects the contraint and
- * aggregates barycenter and weight information.
- *
- * This implementation is based on the description in Forster, "A Fast and
- * Simple Hueristic for Constrained Two-Level Crossing Reduction," thought it
- * differs in some specific details.
- *
- * Pre-conditions:
- *
- *    1. Each entry has the form {v, barycenter, weight}, or if the node has
- *       no barycenter, then {v}.
- *
- * Returns:
- *
- *    A new list of entries of the form {vs, i, barycenter, weight}. The list
- *    `vs` may either be a singleton or it may be an aggregation of nodes
- *    ordered such that they do not violate constraints from the constraint
- *    graph. The property `i` is the lowest original index of any of the
- *    elements in `vs`.
- */
-function resolveConflicts(entries, cg) {
-  var mappedEntries = {};
-  _.forEach(entries, function(entry, i) {
-    var tmp = mappedEntries[entry.v] = {
-      indegree: 0,
-      "in": [],
-      out: [],
-      vs: [entry.v],
-      i: i
-    };
-    if (!_.isUndefined(entry.barycenter)) {
-      tmp.barycenter = entry.barycenter;
-      tmp.weight = entry.weight;
-    }
-  });
-
-  _.forEach(cg.edges(), function(e) {
-    var entryV = mappedEntries[e.v];
-    var entryW = mappedEntries[e.w];
-    if (!_.isUndefined(entryV) && !_.isUndefined(entryW)) {
-      entryW.indegree++;
-      entryV.out.push(mappedEntries[e.w]);
-    }
-  });
-
-  var sourceSet = _.filter(mappedEntries, function(entry) {
-    return !entry.indegree;
-  });
-
-  return doResolveConflicts(sourceSet);
-}
-
-function doResolveConflicts(sourceSet) {
-  var entries = [];
-
-  function handleIn(vEntry) {
-    return function(uEntry) {
-      if (uEntry.merged) {
-        return;
-      }
-      if (_.isUndefined(uEntry.barycenter) ||
-          _.isUndefined(vEntry.barycenter) ||
-          uEntry.barycenter >= vEntry.barycenter) {
-        mergeEntries(vEntry, uEntry);
-      }
-    };
-  }
-
-  function handleOut(vEntry) {
-    return function(wEntry) {
-      wEntry["in"].push(vEntry);
-      if (--wEntry.indegree === 0) {
-        sourceSet.push(wEntry);
-      }
-    };
-  }
-
-  while (sourceSet.length) {
-    var entry = sourceSet.pop();
-    entries.push(entry);
-    _.forEach(entry["in"].reverse(), handleIn(entry));
-    _.forEach(entry.out, handleOut(entry));
-  }
-
-  return _.map(_.filter(entries, function(entry) { return !entry.merged; }),
-    function(entry) {
-      return _.pick(entry, ["vs", "i", "barycenter", "weight"]);
-    });
-
-}
-
-function mergeEntries(target, source) {
-  var sum = 0;
-  var weight = 0;
-
-  if (target.weight) {
-    sum += target.barycenter * target.weight;
-    weight += target.weight;
-  }
-
-  if (source.weight) {
-    sum += source.barycenter * source.weight;
-    weight += source.weight;
-  }
-
-  target.vs = source.vs.concat(target.vs);
-  target.barycenter = sum / weight;
-  target.weight = weight;
-  target.i = Math.min(source.i, target.i);
-  source.merged = true;
-}
-
-},{"../lodash":10}],20:[function(require,module,exports){
-var _ = require("../lodash");
-var barycenter = require("./barycenter");
-var resolveConflicts = require("./resolve-conflicts");
-var sort = require("./sort");
-
-module.exports = sortSubgraph;
-
-function sortSubgraph(g, v, cg, biasRight) {
-  var movable = g.children(v);
-  var node = g.node(v);
-  var bl = node ? node.borderLeft : undefined;
-  var br = node ? node.borderRight: undefined;
-  var subgraphs = {};
-
-  if (bl) {
-    movable = _.filter(movable, function(w) {
-      return w !== bl && w !== br;
-    });
-  }
-
-  var barycenters = barycenter(g, movable);
-  _.forEach(barycenters, function(entry) {
-    if (g.children(entry.v).length) {
-      var subgraphResult = sortSubgraph(g, entry.v, cg, biasRight);
-      subgraphs[entry.v] = subgraphResult;
-      if (_.has(subgraphResult, "barycenter")) {
-        mergeBarycenters(entry, subgraphResult);
-      }
-    }
-  });
-
-  var entries = resolveConflicts(barycenters, cg);
-  expandSubgraphs(entries, subgraphs);
-
-  var result = sort(entries, biasRight);
-
-  if (bl) {
-    result.vs = _.flatten([bl, result.vs, br], true);
-    if (g.predecessors(bl).length) {
-      var blPred = g.node(g.predecessors(bl)[0]),
-        brPred = g.node(g.predecessors(br)[0]);
-      if (!_.has(result, "barycenter")) {
-        result.barycenter = 0;
-        result.weight = 0;
-      }
-      result.barycenter = (result.barycenter * result.weight +
-                           blPred.order + brPred.order) / (result.weight + 2);
-      result.weight += 2;
-    }
-  }
-
-  return result;
-}
-
-function expandSubgraphs(entries, subgraphs) {
-  _.forEach(entries, function(entry) {
-    entry.vs = _.flatten(entry.vs.map(function(v) {
-      if (subgraphs[v]) {
-        return subgraphs[v].vs;
-      }
-      return v;
-    }), true);
-  });
-}
-
-function mergeBarycenters(target, other) {
-  if (!_.isUndefined(target.barycenter)) {
-    target.barycenter = (target.barycenter * target.weight +
-                         other.barycenter * other.weight) /
-                        (target.weight + other.weight);
-    target.weight += other.weight;
-  } else {
-    target.barycenter = other.barycenter;
-    target.weight = other.weight;
-  }
-}
-
-},{"../lodash":10,"./barycenter":14,"./resolve-conflicts":19,"./sort":21}],21:[function(require,module,exports){
-var _ = require("../lodash");
-var util = require("../util");
-
-module.exports = sort;
-
-function sort(entries, biasRight) {
-  var parts = util.partition(entries, function(entry) {
-    return _.has(entry, "barycenter");
-  });
-  var sortable = parts.lhs,
-    unsortable = _.sortBy(parts.rhs, function(entry) { return -entry.i; }),
-    vs = [],
-    sum = 0,
-    weight = 0,
-    vsIndex = 0;
-
-  sortable.sort(compareWithBias(!!biasRight));
-
-  vsIndex = consumeUnsortable(vs, unsortable, vsIndex);
-
-  _.forEach(sortable, function (entry) {
-    vsIndex += entry.vs.length;
-    vs.push(entry.vs);
-    sum += entry.barycenter * entry.weight;
-    weight += entry.weight;
-    vsIndex = consumeUnsortable(vs, unsortable, vsIndex);
-  });
-
-  var result = { vs: _.flatten(vs, true) };
-  if (weight) {
-    result.barycenter = sum / weight;
-    result.weight = weight;
-  }
-  return result;
-}
-
-function consumeUnsortable(vs, unsortable, index) {
-  var last;
-  while (unsortable.length && (last = _.last(unsortable)).i <= index) {
-    unsortable.pop();
-    vs.push(last.vs);
-    index++;
-  }
-  return index;
-}
-
-function compareWithBias(bias) {
-  return function(entryV, entryW) {
-    if (entryV.barycenter < entryW.barycenter) {
-      return -1;
-    } else if (entryV.barycenter > entryW.barycenter) {
-      return 1;
-    }
-
-    return !bias ? entryV.i - entryW.i : entryW.i - entryV.i;
-  };
-}
-
-},{"../lodash":10,"../util":29}],22:[function(require,module,exports){
-var _ = require("./lodash");
-
-module.exports = parentDummyChains;
-
-function parentDummyChains(g) {
-  var postorderNums = postorder(g);
-
-  _.forEach(g.graph().dummyChains, function(v) {
-    var node = g.node(v);
-    var edgeObj = node.edgeObj;
-    var pathData = findPath(g, postorderNums, edgeObj.v, edgeObj.w);
-    var path = pathData.path;
-    var lca = pathData.lca;
-    var pathIdx = 0;
-    var pathV = path[pathIdx];
-    var ascending = true;
-
-    while (v !== edgeObj.w) {
-      node = g.node(v);
-
-      if (ascending) {
-        while ((pathV = path[pathIdx]) !== lca &&
-               g.node(pathV).maxRank < node.rank) {
-          pathIdx++;
-        }
-
-        if (pathV === lca) {
-          ascending = false;
-        }
-      }
-
-      if (!ascending) {
-        while (pathIdx < path.length - 1 &&
-               g.node(pathV = path[pathIdx + 1]).minRank <= node.rank) {
-          pathIdx++;
-        }
-        pathV = path[pathIdx];
-      }
-
-      g.setParent(v, pathV);
-      v = g.successors(v)[0];
-    }
-  });
-}
-
-// Find a path from v to w through the lowest common ancestor (LCA). Return the
-// full path and the LCA.
-function findPath(g, postorderNums, v, w) {
-  var vPath = [];
-  var wPath = [];
-  var low = Math.min(postorderNums[v].low, postorderNums[w].low);
-  var lim = Math.max(postorderNums[v].lim, postorderNums[w].lim);
-  var parent;
-  var lca;
-
-  // Traverse up from v to find the LCA
-  parent = v;
-  do {
-    parent = g.parent(parent);
-    vPath.push(parent);
-  } while (parent &&
-           (postorderNums[parent].low > low || lim > postorderNums[parent].lim));
-  lca = parent;
-
-  // Traverse from w to LCA
-  parent = w;
-  while ((parent = g.parent(parent)) !== lca) {
-    wPath.push(parent);
-  }
-
-  return { path: vPath.concat(wPath.reverse()), lca: lca };
-}
-
-function postorder(g) {
-  var result = {};
-  var lim = 0;
-
-  function dfs(v) {
-    var low = lim;
-    _.forEach(g.children(v), dfs);
-    result[v] = { low: low, lim: lim++ };
-  }
-  _.forEach(g.children(), dfs);
-
-  return result;
-}
-
-},{"./lodash":10}],23:[function(require,module,exports){
-"use strict";
-
-var _ = require("../lodash");
-var Graph = require("../graphlib").Graph;
-var util = require("../util");
-
-/*
- * This module provides coordinate assignment based on Brandes and Köpf, "Fast
- * and Simple Horizontal Coordinate Assignment."
- */
-
-module.exports = {
-  positionX: positionX,
-  findType1Conflicts: findType1Conflicts,
-  findType2Conflicts: findType2Conflicts,
-  addConflict: addConflict,
-  hasConflict: hasConflict,
-  verticalAlignment: verticalAlignment,
-  horizontalCompaction: horizontalCompaction,
-  alignCoordinates: alignCoordinates,
-  findSmallestWidthAlignment: findSmallestWidthAlignment,
-  balance: balance
-};
-
-/*
- * Marks all edges in the graph with a type-1 conflict with the "type1Conflict"
- * property. A type-1 conflict is one where a non-inner segment crosses an
- * inner segment. An inner segment is an edge with both incident nodes marked
- * with the "dummy" property.
- *
- * This algorithm scans layer by layer, starting with the second, for type-1
- * conflicts between the current layer and the previous layer. For each layer
- * it scans the nodes from left to right until it reaches one that is incident
- * on an inner segment. It then scans predecessors to determine if they have
- * edges that cross that inner segment. At the end a final scan is done for all
- * nodes on the current rank to see if they cross the last visited inner
- * segment.
- *
- * This algorithm (safely) assumes that a dummy node will only be incident on a
- * single node in the layers being scanned.
- */
-function findType1Conflicts(g, layering) {
-  var conflicts = {};
-
-  function visitLayer(prevLayer, layer) {
-    var
-      // last visited node in the previous layer that is incident on an inner
-      // segment.
-      k0 = 0,
-      // Tracks the last node in this layer scanned for crossings with a type-1
-      // segment.
-      scanPos = 0,
-      prevLayerLength = prevLayer.length,
-      lastNode = _.last(layer);
-
-    _.forEach(layer, function(v, i) {
-      var w = findOtherInnerSegmentNode(g, v),
-        k1 = w ? g.node(w).order : prevLayerLength;
-
-      if (w || v === lastNode) {
-        _.forEach(layer.slice(scanPos, i +1), function(scanNode) {
-          _.forEach(g.predecessors(scanNode), function(u) {
-            var uLabel = g.node(u),
-              uPos = uLabel.order;
-            if ((uPos < k0 || k1 < uPos) &&
-                !(uLabel.dummy && g.node(scanNode).dummy)) {
-              addConflict(conflicts, u, scanNode);
-            }
-          });
-        });
-        scanPos = i + 1;
-        k0 = k1;
-      }
-    });
-
-    return layer;
-  }
-
-  _.reduce(layering, visitLayer);
-  return conflicts;
-}
-
-function findType2Conflicts(g, layering) {
-  var conflicts = {};
-
-  function scan(south, southPos, southEnd, prevNorthBorder, nextNorthBorder) {
-    var v;
-    _.forEach(_.range(southPos, southEnd), function(i) {
-      v = south[i];
-      if (g.node(v).dummy) {
-        _.forEach(g.predecessors(v), function(u) {
-          var uNode = g.node(u);
-          if (uNode.dummy &&
-              (uNode.order < prevNorthBorder || uNode.order > nextNorthBorder)) {
-            addConflict(conflicts, u, v);
-          }
-        });
-      }
-    });
-  }
-
-
-  function visitLayer(north, south) {
-    var prevNorthPos = -1,
-      nextNorthPos,
-      southPos = 0;
-
-    _.forEach(south, function(v, southLookahead) {
-      if (g.node(v).dummy === "border") {
-        var predecessors = g.predecessors(v);
-        if (predecessors.length) {
-          nextNorthPos = g.node(predecessors[0]).order;
-          scan(south, southPos, southLookahead, prevNorthPos, nextNorthPos);
-          southPos = southLookahead;
-          prevNorthPos = nextNorthPos;
-        }
-      }
-      scan(south, southPos, south.length, nextNorthPos, north.length);
-    });
-
-    return south;
-  }
-
-  _.reduce(layering, visitLayer);
-  return conflicts;
-}
-
-function findOtherInnerSegmentNode(g, v) {
-  if (g.node(v).dummy) {
-    return _.find(g.predecessors(v), function(u) {
-      return g.node(u).dummy;
-    });
-  }
-}
-
-function addConflict(conflicts, v, w) {
-  if (v > w) {
-    var tmp = v;
-    v = w;
-    w = tmp;
-  }
-
-  var conflictsV = conflicts[v];
-  if (!conflictsV) {
-    conflicts[v] = conflictsV = {};
-  }
-  conflictsV[w] = true;
-}
-
-function hasConflict(conflicts, v, w) {
-  if (v > w) {
-    var tmp = v;
-    v = w;
-    w = tmp;
-  }
-  return _.has(conflicts[v], w);
-}
-
-/*
- * Try to align nodes into vertical "blocks" where possible. This algorithm
- * attempts to align a node with one of its median neighbors. If the edge
- * connecting a neighbor is a type-1 conflict then we ignore that possibility.
- * If a previous node has already formed a block with a node after the node
- * we're trying to form a block with, we also ignore that possibility - our
- * blocks would be split in that scenario.
- */
-function verticalAlignment(g, layering, conflicts, neighborFn) {
-  var root = {},
-    align = {},
-    pos = {};
-
-  // We cache the position here based on the layering because the graph and
-  // layering may be out of sync. The layering matrix is manipulated to
-  // generate different extreme alignments.
-  _.forEach(layering, function(layer) {
-    _.forEach(layer, function(v, order) {
-      root[v] = v;
-      align[v] = v;
-      pos[v] = order;
-    });
-  });
-
-  _.forEach(layering, function(layer) {
-    var prevIdx = -1;
-    _.forEach(layer, function(v) {
-      var ws = neighborFn(v);
-      if (ws.length) {
-        ws = _.sortBy(ws, function(w) { return pos[w]; });
-        var mp = (ws.length - 1) / 2;
-        for (var i = Math.floor(mp), il = Math.ceil(mp); i <= il; ++i) {
-          var w = ws[i];
-          if (align[v] === v &&
-              prevIdx < pos[w] &&
-              !hasConflict(conflicts, v, w)) {
-            align[w] = v;
-            align[v] = root[v] = root[w];
-            prevIdx = pos[w];
-          }
-        }
-      }
-    });
-  });
-
-  return { root: root, align: align };
-}
-
-function horizontalCompaction(g, layering, root, align, reverseSep) {
-  // This portion of the algorithm differs from BK due to a number of problems.
-  // Instead of their algorithm we construct a new block graph and do two
-  // sweeps. The first sweep places blocks with the smallest possible
-  // coordinates. The second sweep removes unused space by moving blocks to the
-  // greatest coordinates without violating separation.
-  var xs = {},
-    blockG = buildBlockGraph(g, layering, root, reverseSep),
-    borderType = reverseSep ? "borderLeft" : "borderRight";
-
-  function iterate(setXsFunc, nextNodesFunc) {
-    var stack = blockG.nodes();
-    var elem = stack.pop();
-    var visited = {};
-    while (elem) {
-      if (visited[elem]) {
-        setXsFunc(elem);
-      } else {
-        visited[elem] = true;
-        stack.push(elem);
-        stack = stack.concat(nextNodesFunc(elem));
-      }
-
-      elem = stack.pop();
-    }
-  }
-
-  // First pass, assign smallest coordinates
-  function pass1(elem) {
-    xs[elem] = blockG.inEdges(elem).reduce(function(acc, e) {
-      return Math.max(acc, xs[e.v] + blockG.edge(e));
-    }, 0);
-  }
-
-  // Second pass, assign greatest coordinates
-  function pass2(elem) {
-    var min = blockG.outEdges(elem).reduce(function(acc, e) {
-      return Math.min(acc, xs[e.w] - blockG.edge(e));
-    }, Number.POSITIVE_INFINITY);
-
-    var node = g.node(elem);
-    if (min !== Number.POSITIVE_INFINITY && node.borderType !== borderType) {
-      xs[elem] = Math.max(xs[elem], min);
-    }
-  }
-
-  iterate(pass1, blockG.predecessors.bind(blockG));
-  //iterate(pass2, blockG.successors.bind(blockG));
-
-  // Assign x coordinates to all nodes
-  _.forEach(align, function(v) {
-    xs[v] = xs[root[v]];
-  });
-
-  return xs;
-}
-
-
-function buildBlockGraph(g, layering, root, reverseSep) {
-  var blockGraph = new Graph(),
-    graphLabel = g.graph(),
-    sepFn = sep(graphLabel.nodesep, graphLabel.edgesep, reverseSep);
-
-  _.forEach(layering, function(layer) {
-    var u;
-    _.forEach(layer, function(v) {
-      var vRoot = root[v];
-      blockGraph.setNode(vRoot);
-      if (u) {
-        var uRoot = root[u],
-          prevMax = blockGraph.edge(uRoot, vRoot);
-        blockGraph.setEdge(uRoot, vRoot, Math.max(sepFn(g, v, u), prevMax || 0));
-      }
-      u = v;
-    });
-  });
-
-  return blockGraph;
-}
-
-/*
- * Returns the alignment that has the smallest width of the given alignments.
- */
-function findSmallestWidthAlignment(g, xss) {
-  return _.minBy(_.values(xss), function (xs) {
-    var max = Number.NEGATIVE_INFINITY;
-    var min = Number.POSITIVE_INFINITY;
-
-    _.forIn(xs, function (x, v) {
-      var halfWidth = width(g, v) / 2;
-
-      max = Math.max(x + halfWidth, max);
-      min = Math.min(x - halfWidth, min);
-    });
-
-    return max - min;
-  });
-}
-
-/*
- * Align the coordinates of each of the layout alignments such that
- * left-biased alignments have their minimum coordinate at the same point as
- * the minimum coordinate of the smallest width alignment and right-biased
- * alignments have their maximum coordinate at the same point as the maximum
- * coordinate of the smallest width alignment.
- */
-function alignCoordinates(xss, alignTo) {
-  var alignToVals = _.values(alignTo),
-    alignToMin = _.min(alignToVals),
-    alignToMax = _.max(alignToVals);
-
-  _.forEach(["u", "d"], function(vert) {
-    _.forEach(["l", "r"], function(horiz) {
-      var alignment = vert + horiz,
-        xs = xss[alignment],
-        delta;
-      if (xs === alignTo) return;
-
-      var xsVals = _.values(xs);
-      delta = horiz === "l" ? alignToMin - _.min(xsVals) : alignToMax - _.max(xsVals);
-
-      if (delta) {
-        xss[alignment] = _.mapValues(xs, function(x) { return x + delta; });
-      }
-    });
-  });
-}
-
-function balance(xss, align) {
-  return _.mapValues(xss.ul, function(ignore, v) {
-    if (align) {
-      return xss[align.toLowerCase()][v];
-    } else {
-      var xs = _.sortBy(_.map(xss, v));
-      return (xs[1] + xs[2]) / 2;
-    }
-  });
-}
-
-function positionX(g) {
-  var layering = util.buildLayerMatrix(g);
-  var conflicts = _.merge(
-    findType1Conflicts(g, layering),
-    findType2Conflicts(g, layering));
-
-  var xss = {};
-  var adjustedLayering;
-  _.forEach(["u", "d"], function(vert) {
-    adjustedLayering = vert === "u" ? layering : _.values(layering).reverse();
-    _.forEach(["l", "r"], function(horiz) {
-      if (horiz === "r") {
-        adjustedLayering = _.map(adjustedLayering, function(inner) {
-          return _.values(inner).reverse();
-        });
-      }
-
-      var neighborFn = (vert === "u" ? g.predecessors : g.successors).bind(g);
-      var align = verticalAlignment(g, adjustedLayering, conflicts, neighborFn);
-      var xs = horizontalCompaction(g, adjustedLayering,
-        align.root, align.align, horiz === "r");
-      if (horiz === "r") {
-        xs = _.mapValues(xs, function(x) { return -x; });
-      }
-      xss[vert + horiz] = xs;
-    });
-  });
-
-  var smallestWidth = findSmallestWidthAlignment(g, xss);
-  alignCoordinates(xss, smallestWidth);
-  return balance(xss, g.graph().align);
-}
-
-function sep(nodeSep, edgeSep, reverseSep) {
-  return function(g, v, w) {
-    var vLabel = g.node(v);
-    var wLabel = g.node(w);
-    var sum = 0;
-    var delta;
-
-    sum += vLabel.width / 2;
-    if (_.has(vLabel, "labelpos")) {
-      switch (vLabel.labelpos.toLowerCase()) {
-      case "l": delta = -vLabel.width / 2; break;
-      case "r": delta = vLabel.width / 2; break;
-      }
-    }
-    if (delta) {
-      sum += reverseSep ? delta : -delta;
-    }
-    delta = 0;
-
-    sum += (vLabel.dummy ? edgeSep : nodeSep) / 2;
-    sum += (wLabel.dummy ? edgeSep : nodeSep) / 2;
-
-    sum += wLabel.width / 2;
-    if (_.has(wLabel, "labelpos")) {
-      switch (wLabel.labelpos.toLowerCase()) {
-      case "l": delta = wLabel.width / 2; break;
-      case "r": delta = -wLabel.width / 2; break;
-      }
-    }
-    if (delta) {
-      sum += reverseSep ? delta : -delta;
-    }
-    delta = 0;
-
-    return sum;
-  };
-}
-
-function width(g, v) {
-  return g.node(v).width;
-}
-
-},{"../graphlib":7,"../lodash":10,"../util":29}],24:[function(require,module,exports){
-"use strict";
-
-var _ = require("../lodash");
-var util = require("../util");
-var positionX = require("./bk").positionX;
-
-module.exports = position;
-
-function position(g) {
-  g = util.asNonCompoundGraph(g);
-
-  positionY(g);
-  _.forEach(positionX(g), function(x, v) {
-    g.node(v).x = x;
-  });
-}
-
-function positionY(g) {
-  var layering = util.buildLayerMatrix(g);
-  var rankSep = g.graph().ranksep;
-  var prevY = 0;
-  _.forEach(layering, function(layer) {
-    var maxHeight = _.max(_.map(layer, function(v) { return g.node(v).height; }));
-    _.forEach(layer, function(v) {
-      g.node(v).y = prevY + maxHeight / 2;
-    });
-    prevY += maxHeight + rankSep;
-  });
-}
-
-
-},{"../lodash":10,"../util":29,"./bk":23}],25:[function(require,module,exports){
-"use strict";
-
-var _ = require("../lodash");
-var Graph = require("../graphlib").Graph;
-var slack = require("./util").slack;
-
-module.exports = feasibleTree;
-
-/*
- * Constructs a spanning tree with tight edges and adjusted the input node's
- * ranks to achieve this. A tight edge is one that is has a length that matches
- * its "minlen" attribute.
- *
- * The basic structure for this function is derived from Gansner, et al., "A
- * Technique for Drawing Directed Graphs."
- *
- * Pre-conditions:
- *
- *    1. Graph must be a DAG.
- *    2. Graph must be connected.
- *    3. Graph must have at least one node.
- *    5. Graph nodes must have been previously assigned a "rank" property that
- *       respects the "minlen" property of incident edges.
- *    6. Graph edges must have a "minlen" property.
- *
- * Post-conditions:
- *
- *    - Graph nodes will have their rank adjusted to ensure that all edges are
- *      tight.
- *
- * Returns a tree (undirected graph) that is constructed using only "tight"
- * edges.
- */
-function feasibleTree(g) {
-  var t = new Graph({ directed: false });
-
-  // Choose arbitrary node from which to start our tree
-  var start = g.nodes()[0];
-  var size = g.nodeCount();
-  t.setNode(start, {});
-
-  var edge, delta;
-  while (tightTree(t, g) < size) {
-    edge = findMinSlackEdge(t, g);
-    delta = t.hasNode(edge.v) ? slack(g, edge) : -slack(g, edge);
-    shiftRanks(t, g, delta);
-  }
-
-  return t;
-}
-
-/*
- * Finds a maximal tree of tight edges and returns the number of nodes in the
- * tree.
- */
-function tightTree(t, g) {
-  function dfs(v) {
-    _.forEach(g.nodeEdges(v), function(e) {
-      var edgeV = e.v,
-        w = (v === edgeV) ? e.w : edgeV;
-      if (!t.hasNode(w) && !slack(g, e)) {
-        t.setNode(w, {});
-        t.setEdge(v, w, {});
-        dfs(w);
-      }
-    });
-  }
-
-  _.forEach(t.nodes(), dfs);
-  return t.nodeCount();
-}
-
-/*
- * Finds the edge with the smallest slack that is incident on tree and returns
- * it.
- */
-function findMinSlackEdge(t, g) {
-  return _.minBy(g.edges(), function(e) {
-    if (t.hasNode(e.v) !== t.hasNode(e.w)) {
-      return slack(g, e);
-    }
-  });
-}
-
-function shiftRanks(t, g, delta) {
-  _.forEach(t.nodes(), function(v) {
-    g.node(v).rank += delta;
-  });
-}
-
-},{"../graphlib":7,"../lodash":10,"./util":28}],26:[function(require,module,exports){
-"use strict";
-
-var rankUtil = require("./util");
-var longestPath = rankUtil.longestPath;
-var feasibleTree = require("./feasible-tree");
-var networkSimplex = require("./network-simplex");
-
-module.exports = rank;
-
-/*
- * Assigns a rank to each node in the input graph that respects the "minlen"
- * constraint specified on edges between nodes.
- *
- * This basic structure is derived from Gansner, et al., "A Technique for
- * Drawing Directed Graphs."
- *
- * Pre-conditions:
- *
- *    1. Graph must be a connected DAG
- *    2. Graph nodes must be objects
- *    3. Graph edges must have "weight" and "minlen" attributes
- *
- * Post-conditions:
- *
- *    1. Graph nodes will have a "rank" attribute based on the results of the
- *       algorithm. Ranks can start at any index (including negative), we'll
- *       fix them up later.
- */
-function rank(g) {
-  switch(g.graph().ranker) {
-  case "network-simplex": networkSimplexRanker(g); break;
-  case "tight-tree": tightTreeRanker(g); break;
-  case "longest-path": longestPathRanker(g); break;
-  default: networkSimplexRanker(g);
-  }
-}
-
-// A fast and simple ranker, but results are far from optimal.
-var longestPathRanker = longestPath;
-
-function tightTreeRanker(g) {
-  longestPath(g);
-  feasibleTree(g);
-}
-
-function networkSimplexRanker(g) {
-  networkSimplex(g);
-}
-
-},{"./feasible-tree":25,"./network-simplex":27,"./util":28}],27:[function(require,module,exports){
-"use strict";
-
-var _ = require("../lodash");
-var feasibleTree = require("./feasible-tree");
-var slack = require("./util").slack;
-var initRank = require("./util").longestPath;
-var preorder = require("../graphlib").alg.preorder;
-var postorder = require("../graphlib").alg.postorder;
-var simplify = require("../util").simplify;
-
-module.exports = networkSimplex;
-
-// Expose some internals for testing purposes
-networkSimplex.initLowLimValues = initLowLimValues;
-networkSimplex.initCutValues = initCutValues;
-networkSimplex.calcCutValue = calcCutValue;
-networkSimplex.leaveEdge = leaveEdge;
-networkSimplex.enterEdge = enterEdge;
-networkSimplex.exchangeEdges = exchangeEdges;
-
-/*
- * The network simplex algorithm assigns ranks to each node in the input graph
- * and iteratively improves the ranking to reduce the length of edges.
- *
- * Preconditions:
- *
- *    1. The input graph must be a DAG.
- *    2. All nodes in the graph must have an object value.
- *    3. All edges in the graph must have "minlen" and "weight" attributes.
- *
- * Postconditions:
- *
- *    1. All nodes in the graph will have an assigned "rank" attribute that has
- *       been optimized by the network simplex algorithm. Ranks start at 0.
- *
- *
- * A rough sketch of the algorithm is as follows:
- *
- *    1. Assign initial ranks to each node. We use the longest path algorithm,
- *       which assigns ranks to the lowest position possible. In general this
- *       leads to very wide bottom ranks and unnecessarily long edges.
- *    2. Construct a feasible tight tree. A tight tree is one such that all
- *       edges in the tree have no slack (difference between length of edge
- *       and minlen for the edge). This by itself greatly improves the assigned
- *       rankings by shorting edges.
- *    3. Iteratively find edges that have negative cut values. Generally a
- *       negative cut value indicates that the edge could be removed and a new
- *       tree edge could be added to produce a more compact graph.
- *
- * Much of the algorithms here are derived from Gansner, et al., "A Technique
- * for Drawing Directed Graphs." The structure of the file roughly follows the
- * structure of the overall algorithm.
- */
-function networkSimplex(g) {
-  g = simplify(g);
-  initRank(g);
-  var t = feasibleTree(g);
-  initLowLimValues(t);
-  initCutValues(t, g);
-
-  var e, f;
-  while ((e = leaveEdge(t))) {
-    f = enterEdge(t, g, e);
-    exchangeEdges(t, g, e, f);
-  }
-}
-
-/*
- * Initializes cut values for all edges in the tree.
- */
-function initCutValues(t, g) {
-  var vs = postorder(t, t.nodes());
-  vs = vs.slice(0, vs.length - 1);
-  _.forEach(vs, function(v) {
-    assignCutValue(t, g, v);
-  });
-}
-
-function assignCutValue(t, g, child) {
-  var childLab = t.node(child);
-  var parent = childLab.parent;
-  t.edge(child, parent).cutvalue = calcCutValue(t, g, child);
-}
-
-/*
- * Given the tight tree, its graph, and a child in the graph calculate and
- * return the cut value for the edge between the child and its parent.
- */
-function calcCutValue(t, g, child) {
-  var childLab = t.node(child);
-  var parent = childLab.parent;
-  // True if the child is on the tail end of the edge in the directed graph
-  var childIsTail = true;
-  // The graph's view of the tree edge we're inspecting
-  var graphEdge = g.edge(child, parent);
-  // The accumulated cut value for the edge between this node and its parent
-  var cutValue = 0;
-
-  if (!graphEdge) {
-    childIsTail = false;
-    graphEdge = g.edge(parent, child);
-  }
-
-  cutValue = graphEdge.weight;
-
-  _.forEach(g.nodeEdges(child), function(e) {
-    var isOutEdge = e.v === child,
-      other = isOutEdge ? e.w : e.v;
-
-    if (other !== parent) {
-      var pointsToHead = isOutEdge === childIsTail,
-        otherWeight = g.edge(e).weight;
-
-      cutValue += pointsToHead ? otherWeight : -otherWeight;
-      if (isTreeEdge(t, child, other)) {
-        var otherCutValue = t.edge(child, other).cutvalue;
-        cutValue += pointsToHead ? -otherCutValue : otherCutValue;
-      }
-    }
-  });
-
-  return cutValue;
-}
-
-function initLowLimValues(tree, root) {
-  if (arguments.length < 2) {
-    root = tree.nodes()[0];
-  }
-  dfsAssignLowLim(tree, {}, 1, root);
-}
-
-function dfsAssignLowLim(tree, visited, nextLim, v, parent) {
-  var low = nextLim;
-  var label = tree.node(v);
-
-  visited[v] = true;
-  _.forEach(tree.neighbors(v), function(w) {
-    if (!_.has(visited, w)) {
-      nextLim = dfsAssignLowLim(tree, visited, nextLim, w, v);
-    }
-  });
-
-  label.low = low;
-  label.lim = nextLim++;
-  if (parent) {
-    label.parent = parent;
-  } else {
-    // TODO should be able to remove this when we incrementally update low lim
-    delete label.parent;
-  }
-
-  return nextLim;
-}
-
-function leaveEdge(tree) {
-  return _.find(tree.edges(), function(e) {
-    return tree.edge(e).cutvalue < 0;
-  });
-}
-
-function enterEdge(t, g, edge) {
-  var v = edge.v;
-  var w = edge.w;
-
-  // For the rest of this function we assume that v is the tail and w is the
-  // head, so if we don't have this edge in the graph we should flip it to
-  // match the correct orientation.
-  if (!g.hasEdge(v, w)) {
-    v = edge.w;
-    w = edge.v;
-  }
-
-  var vLabel = t.node(v);
-  var wLabel = t.node(w);
-  var tailLabel = vLabel;
-  var flip = false;
-
-  // If the root is in the tail of the edge then we need to flip the logic that
-  // checks for the head and tail nodes in the candidates function below.
-  if (vLabel.lim > wLabel.lim) {
-    tailLabel = wLabel;
-    flip = true;
-  }
-
-  var candidates = _.filter(g.edges(), function(edge) {
-    return flip === isDescendant(t, t.node(edge.v), tailLabel) &&
-           flip !== isDescendant(t, t.node(edge.w), tailLabel);
-  });
-
-  return _.minBy(candidates, function(edge) { return slack(g, edge); });
-}
-
-function exchangeEdges(t, g, e, f) {
-  var v = e.v;
-  var w = e.w;
-  t.removeEdge(v, w);
-  t.setEdge(f.v, f.w, {});
-  initLowLimValues(t);
-  initCutValues(t, g);
-  updateRanks(t, g);
-}
-
-function updateRanks(t, g) {
-  var root = _.find(t.nodes(), function(v) { return !g.node(v).parent; });
-  var vs = preorder(t, root);
-  vs = vs.slice(1);
-  _.forEach(vs, function(v) {
-    var parent = t.node(v).parent,
-      edge = g.edge(v, parent),
-      flipped = false;
-
-    if (!edge) {
-      edge = g.edge(parent, v);
-      flipped = true;
-    }
-
-    g.node(v).rank = g.node(parent).rank + (flipped ? edge.minlen : -edge.minlen);
-  });
-}
-
-/*
- * Returns true if the edge is in the tree.
- */
-function isTreeEdge(tree, u, v) {
-  return tree.hasEdge(u, v);
-}
-
-/*
- * Returns true if the specified node is descendant of the root node per the
- * assigned low and lim attributes in the tree.
- */
-function isDescendant(tree, vLabel, rootLabel) {
-  return rootLabel.low <= vLabel.lim && vLabel.lim <= rootLabel.lim;
-}
-
-},{"../graphlib":7,"../lodash":10,"../util":29,"./feasible-tree":25,"./util":28}],28:[function(require,module,exports){
-"use strict";
-
-var _ = require("../lodash");
-
-module.exports = {
-  longestPath: longestPath,
-  slack: slack
-};
-
-/*
- * Initializes ranks for the input graph using the longest path algorithm. This
- * algorithm scales well and is fast in practice, it yields rather poor
- * solutions. Nodes are pushed to the lowest layer possible, leaving the bottom
- * ranks wide and leaving edges longer than necessary. However, due to its
- * speed, this algorithm is good for getting an initial ranking that can be fed
- * into other algorithms.
- *
- * This algorithm does not normalize layers because it will be used by other
- * algorithms in most cases. If using this algorithm directly, be sure to
- * run normalize at the end.
- *
- * Pre-conditions:
- *
- *    1. Input graph is a DAG.
- *    2. Input graph node labels can be assigned properties.
- *
- * Post-conditions:
- *
- *    1. Each node will be assign an (unnormalized) "rank" property.
- */
-function longestPath(g) {
-  var visited = {};
-
-  function dfs(v) {
-    var label = g.node(v);
-    if (_.has(visited, v)) {
-      return label.rank;
-    }
-    visited[v] = true;
-
-    var rank = _.min(_.map(g.outEdges(v), function(e) {
-      return dfs(e.w) - g.edge(e).minlen;
-    }));
-
-    if (rank === Number.POSITIVE_INFINITY || // return value of _.map([]) for Lodash 3
-        rank === undefined || // return value of _.map([]) for Lodash 4
-        rank === null) { // return value of _.map([null])
-      rank = 0;
-    }
-
-    return (label.rank = rank);
-  }
-
-  _.forEach(g.sources(), dfs);
-}
-
-/*
- * Returns the amount of slack for the given edge. The slack is defined as the
- * difference between the length of the edge and its minimum length.
- */
-function slack(g, e) {
-  return g.node(e.w).rank - g.node(e.v).rank - g.edge(e).minlen;
-}
-
-},{"../lodash":10}],29:[function(require,module,exports){
-/* eslint "no-console": off */
-
-"use strict";
-
-var _ = require("./lodash");
-var Graph = require("./graphlib").Graph;
-
-module.exports = {
-  addDummyNode: addDummyNode,
-  simplify: simplify,
-  asNonCompoundGraph: asNonCompoundGraph,
-  successorWeights: successorWeights,
-  predecessorWeights: predecessorWeights,
-  intersectRect: intersectRect,
-  buildLayerMatrix: buildLayerMatrix,
-  normalizeRanks: normalizeRanks,
-  removeEmptyRanks: removeEmptyRanks,
-  addBorderNode: addBorderNode,
-  maxRank: maxRank,
-  partition: partition,
-  time: time,
-  notime: notime
-};
-
-/*
- * Adds a dummy node to the graph and return v.
- */
-function addDummyNode(g, type, attrs, name) {
-  var v;
-  do {
-    v = _.uniqueId(name);
-  } while (g.hasNode(v));
-
-  attrs.dummy = type;
-  g.setNode(v, attrs);
-  return v;
-}
-
-/*
- * Returns a new graph with only simple edges. Handles aggregation of data
- * associated with multi-edges.
- */
-function simplify(g) {
-  var simplified = new Graph().setGraph(g.graph());
-  _.forEach(g.nodes(), function(v) { simplified.setNode(v, g.node(v)); });
-  _.forEach(g.edges(), function(e) {
-    var simpleLabel = simplified.edge(e.v, e.w) || { weight: 0, minlen: 1 };
-    var label = g.edge(e);
-    simplified.setEdge(e.v, e.w, {
-      weight: simpleLabel.weight + label.weight,
-      minlen: Math.max(simpleLabel.minlen, label.minlen)
-    });
-  });
-  return simplified;
-}
-
-function asNonCompoundGraph(g) {
-  var simplified = new Graph({ multigraph: g.isMultigraph() }).setGraph(g.graph());
-  _.forEach(g.nodes(), function(v) {
-    if (!g.children(v).length) {
-      simplified.setNode(v, g.node(v));
-    }
-  });
-  _.forEach(g.edges(), function(e) {
-    simplified.setEdge(e, g.edge(e));
-  });
-  return simplified;
-}
-
-function successorWeights(g) {
-  var weightMap = _.map(g.nodes(), function(v) {
-    var sucs = {};
-    _.forEach(g.outEdges(v), function(e) {
-      sucs[e.w] = (sucs[e.w] || 0) + g.edge(e).weight;
-    });
-    return sucs;
-  });
-  return _.zipObject(g.nodes(), weightMap);
-}
-
-function predecessorWeights(g) {
-  var weightMap = _.map(g.nodes(), function(v) {
-    var preds = {};
-    _.forEach(g.inEdges(v), function(e) {
-      preds[e.v] = (preds[e.v] || 0) + g.edge(e).weight;
-    });
-    return preds;
-  });
-  return _.zipObject(g.nodes(), weightMap);
-}
-
-/*
- * Finds where a line starting at point ({x, y}) would intersect a rectangle
- * ({x, y, width, height}) if it were pointing at the rectangle's center.
- */
-function intersectRect(rect, point) {
-  var x = rect.x;
-  var y = rect.y;
-
-  // Rectangle intersection algorithm from:
-  // http://math.stackexchange.com/questions/108113/find-edge-between-two-boxes
-  var dx = point.x - x;
-  var dy = point.y - y;
-  var w = rect.width / 2;
-  var h = rect.height / 2;
-
-  if (!dx && !dy) {
-    throw new Error("Not possible to find intersection inside of the rectangle");
-  }
-
-  var sx, sy;
-  if (Math.abs(dy) * w > Math.abs(dx) * h) {
-    // Intersection is top or bottom of rect.
-    if (dy < 0) {
-      h = -h;
-    }
-    sx = h * dx / dy;
-    sy = h;
-  } else {
-    // Intersection is left or right of rect.
-    if (dx < 0) {
-      w = -w;
-    }
-    sx = w;
-    sy = w * dy / dx;
-  }
-
-  return { x: x + sx, y: y + sy };
-}
-
-/*
- * Given a DAG with each node assigned "rank" and "order" properties, this
- * function will produce a matrix with the ids of each node.
- */
-function buildLayerMatrix(g) {
-  var layering = _.map(_.range(maxRank(g) + 1), function() { return []; });
-  _.forEach(g.nodes(), function(v) {
-    var node = g.node(v);
-    var rank = node.rank;
-    if (!_.isUndefined(rank)) {
-      layering[rank][node.order] = v;
-    }
-  });
-  return layering;
-}
-
-/*
- * Adjusts the ranks for all nodes in the graph such that all nodes v have
- * rank(v) >= 0 and at least one node w has rank(w) = 0.
- */
-function normalizeRanks(g) {
-  var min = _.min(_.map(g.nodes(), function(v) { return g.node(v).rank; }));
-  _.forEach(g.nodes(), function(v) {
-    var node = g.node(v);
-    if (_.has(node, "rank")) {
-      node.rank -= min;
-    }
-  });
-}
-
-function removeEmptyRanks(g) {
-  // Ranks may not start at 0, so we need to offset them
-  var offset = _.min(_.map(g.nodes(), function(v) { return g.node(v).rank; }));
-
-  var layers = [];
-  _.forEach(g.nodes(), function(v) {
-    var rank = g.node(v).rank - offset;
-    if (!layers[rank]) {
-      layers[rank] = [];
-    }
-    layers[rank].push(v);
-  });
-
-  var delta = 0;
-  var nodeRankFactor = g.graph().nodeRankFactor;
-  _.forEach(layers, function(vs, i) {
-    if (_.isUndefined(vs) && i % nodeRankFactor !== 0) {
-      --delta;
-    } else if (delta) {
-      _.forEach(vs, function(v) { g.node(v).rank += delta; });
-    }
-  });
-}
-
-function addBorderNode(g, prefix, rank, order) {
-  var node = {
-    width: 0,
-    height: 0
-  };
-  if (arguments.length >= 4) {
-    node.rank = rank;
-    node.order = order;
-  }
-  return addDummyNode(g, "border", node, prefix);
-}
-
-function maxRank(g) {
-  return _.max(_.map(g.nodes(), function(v) {
-    var rank = g.node(v).rank;
-    if (!_.isUndefined(rank)) {
-      return rank;
-    }
-  }));
-}
-
-/*
- * Partition a collection into two groups: `lhs` and `rhs`. If the supplied
- * function returns true for an entry it goes into `lhs`. Otherwise it goes
- * into `rhs.
- */
-function partition(collection, fn) {
-  var result = { lhs: [], rhs: [] };
-  _.forEach(collection, function(value) {
-    if (fn(value)) {
-      result.lhs.push(value);
-    } else {
-      result.rhs.push(value);
-    }
-  });
-  return result;
-}
-
-/*
- * Returns a new function that wraps `fn` with a timer. The wrapper logs the
- * time it takes to execute the function.
- */
-function time(name, fn) {
-  var start = _.now();
-  try {
-    return fn();
-  } finally {
-    console.log(name + " time: " + (_.now() - start) + "ms");
-  }
-}
-
-function notime(name, fn) {
-  return fn();
-}
-
-},{"./graphlib":7,"./lodash":10}],30:[function(require,module,exports){
-module.exports = "0.8.5";
-
-},{}],31:[function(require,module,exports){
-/**
- * Copyright (c) 2014, Chris Pettitt
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice, this
- * list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- * this list of conditions and the following disclaimer in the documentation
- * and/or other materials provided with the distribution.
- *
- * 3. Neither the name of the copyright holder nor the names of its contributors
- * may be used to endorse or promote products derived from this software without
- * specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
-
-var lib = require("./lib");
-
-module.exports = {
-  Graph: lib.Graph,
-  json: require("./lib/json"),
-  alg: require("./lib/alg"),
-  version: lib.version
-};
-
-},{"./lib":47,"./lib/alg":38,"./lib/json":48}],32:[function(require,module,exports){
-var _ = require("../lodash");
-
-module.exports = components;
-
-function components(g) {
-  var visited = {};
-  var cmpts = [];
-  var cmpt;
-
-  function dfs(v) {
-    if (_.has(visited, v)) return;
-    visited[v] = true;
-    cmpt.push(v);
-    _.each(g.successors(v), dfs);
-    _.each(g.predecessors(v), dfs);
-  }
-
-  _.each(g.nodes(), function(v) {
-    cmpt = [];
-    dfs(v);
-    if (cmpt.length) {
-      cmpts.push(cmpt);
-    }
-  });
-
-  return cmpts;
-}
-
-},{"../lodash":49}],33:[function(require,module,exports){
-var _ = require("../lodash");
-
-module.exports = dfs;
-
-/*
- * A helper that preforms a pre- or post-order traversal on the input graph
- * and returns the nodes in the order they were visited. If the graph is
- * undirected then this algorithm will navigate using neighbors. If the graph
- * is directed then this algorithm will navigate using successors.
- *
- * Order must be one of "pre" or "post".
- */
-function dfs(g, vs, order) {
-  if (!_.isArray(vs)) {
-    vs = [vs];
-  }
-
-  var navigation = (g.isDirected() ? g.successors : g.neighbors).bind(g);
-
-  var acc = [];
-  var visited = {};
-  _.each(vs, function(v) {
-    if (!g.hasNode(v)) {
-      throw new Error("Graph does not have node: " + v);
-    }
-
-    doDfs(g, v, order === "post", visited, navigation, acc);
-  });
-  return acc;
-}
-
-function doDfs(g, v, postorder, visited, navigation, acc) {
-  if (!_.has(visited, v)) {
-    visited[v] = true;
-
-    if (!postorder) { acc.push(v); }
-    _.each(navigation(v), function(w) {
-      doDfs(g, w, postorder, visited, navigation, acc);
-    });
-    if (postorder) { acc.push(v); }
-  }
-}
-
-},{"../lodash":49}],34:[function(require,module,exports){
-var dijkstra = require("./dijkstra");
-var _ = require("../lodash");
-
-module.exports = dijkstraAll;
-
-function dijkstraAll(g, weightFunc, edgeFunc) {
-  return _.transform(g.nodes(), function(acc, v) {
-    acc[v] = dijkstra(g, v, weightFunc, edgeFunc);
-  }, {});
-}
-
-},{"../lodash":49,"./dijkstra":35}],35:[function(require,module,exports){
-var _ = require("../lodash");
-var PriorityQueue = require("../data/priority-queue");
-
-module.exports = dijkstra;
-
-var DEFAULT_WEIGHT_FUNC = _.constant(1);
-
-function dijkstra(g, source, weightFn, edgeFn) {
-  return runDijkstra(g, String(source),
-    weightFn || DEFAULT_WEIGHT_FUNC,
-    edgeFn || function(v) { return g.outEdges(v); });
-}
-
-function runDijkstra(g, source, weightFn, edgeFn) {
-  var results = {};
-  var pq = new PriorityQueue();
-  var v, vEntry;
-
-  var updateNeighbors = function(edge) {
-    var w = edge.v !== v ? edge.v : edge.w;
-    var wEntry = results[w];
-    var weight = weightFn(edge);
-    var distance = vEntry.distance + weight;
-
-    if (weight < 0) {
-      throw new Error("dijkstra does not allow negative edge weights. " +
-                      "Bad edge: " + edge + " Weight: " + weight);
-    }
-
-    if (distance < wEntry.distance) {
-      wEntry.distance = distance;
-      wEntry.predecessor = v;
-      pq.decrease(w, distance);
-    }
-  };
-
-  g.nodes().forEach(function(v) {
-    var distance = v === source ? 0 : Number.POSITIVE_INFINITY;
-    results[v] = { distance: distance };
-    pq.add(v, distance);
-  });
-
-  while (pq.size() > 0) {
-    v = pq.removeMin();
-    vEntry = results[v];
-    if (vEntry.distance === Number.POSITIVE_INFINITY) {
-      break;
-    }
-
-    edgeFn(v).forEach(updateNeighbors);
-  }
-
-  return results;
-}
-
-},{"../data/priority-queue":45,"../lodash":49}],36:[function(require,module,exports){
-var _ = require("../lodash");
-var tarjan = require("./tarjan");
-
-module.exports = findCycles;
-
-function findCycles(g) {
-  return _.filter(tarjan(g), function(cmpt) {
-    return cmpt.length > 1 || (cmpt.length === 1 && g.hasEdge(cmpt[0], cmpt[0]));
-  });
-}
-
-},{"../lodash":49,"./tarjan":43}],37:[function(require,module,exports){
-var _ = require("../lodash");
-
-module.exports = floydWarshall;
-
-var DEFAULT_WEIGHT_FUNC = _.constant(1);
-
-function floydWarshall(g, weightFn, edgeFn) {
-  return runFloydWarshall(g,
-    weightFn || DEFAULT_WEIGHT_FUNC,
-    edgeFn || function(v) { return g.outEdges(v); });
-}
-
-function runFloydWarshall(g, weightFn, edgeFn) {
-  var results = {};
-  var nodes = g.nodes();
-
-  nodes.forEach(function(v) {
-    results[v] = {};
-    results[v][v] = { distance: 0 };
-    nodes.forEach(function(w) {
-      if (v !== w) {
-        results[v][w] = { distance: Number.POSITIVE_INFINITY };
-      }
-    });
-    edgeFn(v).forEach(function(edge) {
-      var w = edge.v === v ? edge.w : edge.v;
-      var d = weightFn(edge);
-      results[v][w] = { distance: d, predecessor: v };
-    });
-  });
-
-  nodes.forEach(function(k) {
-    var rowK = results[k];
-    nodes.forEach(function(i) {
-      var rowI = results[i];
-      nodes.forEach(function(j) {
-        var ik = rowI[k];
-        var kj = rowK[j];
-        var ij = rowI[j];
-        var altDistance = ik.distance + kj.distance;
-        if (altDistance < ij.distance) {
-          ij.distance = altDistance;
-          ij.predecessor = kj.predecessor;
-        }
-      });
-    });
-  });
-
-  return results;
-}
-
-},{"../lodash":49}],38:[function(require,module,exports){
-module.exports = {
-  components: require("./components"),
-  dijkstra: require("./dijkstra"),
-  dijkstraAll: require("./dijkstra-all"),
-  findCycles: require("./find-cycles"),
-  floydWarshall: require("./floyd-warshall"),
-  isAcyclic: require("./is-acyclic"),
-  postorder: require("./postorder"),
-  preorder: require("./preorder"),
-  prim: require("./prim"),
-  tarjan: require("./tarjan"),
-  topsort: require("./topsort")
-};
-
-},{"./components":32,"./dijkstra":35,"./dijkstra-all":34,"./find-cycles":36,"./floyd-warshall":37,"./is-acyclic":39,"./postorder":40,"./preorder":41,"./prim":42,"./tarjan":43,"./topsort":44}],39:[function(require,module,exports){
-var topsort = require("./topsort");
-
-module.exports = isAcyclic;
-
-function isAcyclic(g) {
-  try {
-    topsort(g);
-  } catch (e) {
-    if (e instanceof topsort.CycleException) {
-      return false;
-    }
-    throw e;
-  }
-  return true;
-}
-
-},{"./topsort":44}],40:[function(require,module,exports){
-var dfs = require("./dfs");
-
-module.exports = postorder;
-
-function postorder(g, vs) {
-  return dfs(g, vs, "post");
-}
-
-},{"./dfs":33}],41:[function(require,module,exports){
-var dfs = require("./dfs");
-
-module.exports = preorder;
-
-function preorder(g, vs) {
-  return dfs(g, vs, "pre");
-}
-
-},{"./dfs":33}],42:[function(require,module,exports){
-var _ = require("../lodash");
-var Graph = require("../graph");
-var PriorityQueue = require("../data/priority-queue");
-
-module.exports = prim;
-
-function prim(g, weightFunc) {
-  var result = new Graph();
-  var parents = {};
-  var pq = new PriorityQueue();
-  var v;
-
-  function updateNeighbors(edge) {
-    var w = edge.v === v ? edge.w : edge.v;
-    var pri = pq.priority(w);
-    if (pri !== undefined) {
-      var edgeWeight = weightFunc(edge);
-      if (edgeWeight < pri) {
-        parents[w] = v;
-        pq.decrease(w, edgeWeight);
-      }
-    }
-  }
-
-  if (g.nodeCount() === 0) {
-    return result;
-  }
-
-  _.each(g.nodes(), function(v) {
-    pq.add(v, Number.POSITIVE_INFINITY);
-    result.setNode(v);
-  });
-
-  // Start from an arbitrary node
-  pq.decrease(g.nodes()[0], 0);
-
-  var init = false;
-  while (pq.size() > 0) {
-    v = pq.removeMin();
-    if (_.has(parents, v)) {
-      result.setEdge(v, parents[v]);
-    } else if (init) {
-      throw new Error("Input graph is not connected: " + g);
-    } else {
-      init = true;
-    }
-
-    g.nodeEdges(v).forEach(updateNeighbors);
-  }
-
-  return result;
-}
-
-},{"../data/priority-queue":45,"../graph":46,"../lodash":49}],43:[function(require,module,exports){
-var _ = require("../lodash");
-
-module.exports = tarjan;
-
-function tarjan(g) {
-  var index = 0;
-  var stack = [];
-  var visited = {}; // node id -> { onStack, lowlink, index }
-  var results = [];
-
-  function dfs(v) {
-    var entry = visited[v] = {
-      onStack: true,
-      lowlink: index,
-      index: index++
-    };
-    stack.push(v);
-
-    g.successors(v).forEach(function(w) {
-      if (!_.has(visited, w)) {
-        dfs(w);
-        entry.lowlink = Math.min(entry.lowlink, visited[w].lowlink);
-      } else if (visited[w].onStack) {
-        entry.lowlink = Math.min(entry.lowlink, visited[w].index);
-      }
-    });
-
-    if (entry.lowlink === entry.index) {
-      var cmpt = [];
-      var w;
-      do {
-        w = stack.pop();
-        visited[w].onStack = false;
-        cmpt.push(w);
-      } while (v !== w);
-      results.push(cmpt);
-    }
-  }
-
-  g.nodes().forEach(function(v) {
-    if (!_.has(visited, v)) {
-      dfs(v);
-    }
-  });
-
-  return results;
-}
-
-},{"../lodash":49}],44:[function(require,module,exports){
-var _ = require("../lodash");
-
-module.exports = topsort;
-topsort.CycleException = CycleException;
-
-function topsort(g) {
-  var visited = {};
-  var stack = {};
-  var results = [];
-
-  function visit(node) {
-    if (_.has(stack, node)) {
-      throw new CycleException();
-    }
-
-    if (!_.has(visited, node)) {
-      stack[node] = true;
-      visited[node] = true;
-      _.each(g.predecessors(node), visit);
-      delete stack[node];
-      results.push(node);
-    }
-  }
-
-  _.each(g.sinks(), visit);
-
-  if (_.size(visited) !== g.nodeCount()) {
-    throw new CycleException();
-  }
-
-  return results;
-}
-
-function CycleException() {}
-CycleException.prototype = new Error(); // must be an instance of Error to pass testing
-},{"../lodash":49}],45:[function(require,module,exports){
-var _ = require("../lodash");
-
-module.exports = PriorityQueue;
-
-/**
- * A min-priority queue data structure. This algorithm is derived from Cormen,
- * et al., "Introduction to Algorithms". The basic idea of a min-priority
- * queue is that you can efficiently (in O(1) time) get the smallest key in
- * the queue. Adding and removing elements takes O(log n) time. A key can
- * have its priority decreased in O(log n) time.
- */
-function PriorityQueue() {
-  this._arr = [];
-  this._keyIndices = {};
-}
-
-/**
- * Returns the number of elements in the queue. Takes `O(1)` time.
- */
-PriorityQueue.prototype.size = function() {
-  return this._arr.length;
-};
-
-/**
- * Returns the keys that are in the queue. Takes `O(n)` time.
- */
-PriorityQueue.prototype.keys = function() {
-  return this._arr.map(function(x) { return x.key; });
-};
-
-/**
- * Returns `true` if **key** is in the queue and `false` if not.
- */
-PriorityQueue.prototype.has = function(key) {
-  return _.has(this._keyIndices, key);
-};
-
-/**
- * Returns the priority for **key**. If **key** is not present in the queue
- * then this function returns `undefined`. Takes `O(1)` time.
- *
- * @param {Object} key
- */
-PriorityQueue.prototype.priority = function(key) {
-  var index = this._keyIndices[key];
-  if (index !== undefined) {
-    return this._arr[index].priority;
-  }
-};
-
-/**
- * Returns the key for the minimum element in this queue. If the queue is
- * empty this function throws an Error. Takes `O(1)` time.
- */
-PriorityQueue.prototype.min = function() {
-  if (this.size() === 0) {
-    throw new Error("Queue underflow");
-  }
-  return this._arr[0].key;
-};
-
-/**
- * Inserts a new key into the priority queue. If the key already exists in
- * the queue this function returns `false`; otherwise it will return `true`.
- * Takes `O(n)` time.
- *
- * @param {Object} key the key to add
- * @param {Number} priority the initial priority for the key
- */
-PriorityQueue.prototype.add = function(key, priority) {
-  var keyIndices = this._keyIndices;
-  key = String(key);
-  if (!_.has(keyIndices, key)) {
-    var arr = this._arr;
-    var index = arr.length;
-    keyIndices[key] = index;
-    arr.push({key: key, priority: priority});
-    this._decrease(index);
-    return true;
-  }
-  return false;
-};
-
-/**
- * Removes and returns the smallest key in the queue. Takes `O(log n)` time.
- */
-PriorityQueue.prototype.removeMin = function() {
-  this._swap(0, this._arr.length - 1);
-  var min = this._arr.pop();
-  delete this._keyIndices[min.key];
-  this._heapify(0);
-  return min.key;
-};
-
-/**
- * Decreases the priority for **key** to **priority**. If the new priority is
- * greater than the previous priority, this function will throw an Error.
- *
- * @param {Object} key the key for which to raise priority
- * @param {Number} priority the new priority for the key
- */
-PriorityQueue.prototype.decrease = function(key, priority) {
-  var index = this._keyIndices[key];
-  if (priority > this._arr[index].priority) {
-    throw new Error("New priority is greater than current priority. " +
-        "Key: " + key + " Old: " + this._arr[index].priority + " New: " + priority);
-  }
-  this._arr[index].priority = priority;
-  this._decrease(index);
-};
-
-PriorityQueue.prototype._heapify = function(i) {
-  var arr = this._arr;
-  var l = 2 * i;
-  var r = l + 1;
-  var largest = i;
-  if (l < arr.length) {
-    largest = arr[l].priority < arr[largest].priority ? l : largest;
-    if (r < arr.length) {
-      largest = arr[r].priority < arr[largest].priority ? r : largest;
-    }
-    if (largest !== i) {
-      this._swap(i, largest);
-      this._heapify(largest);
-    }
-  }
-};
-
-PriorityQueue.prototype._decrease = function(index) {
-  var arr = this._arr;
-  var priority = arr[index].priority;
-  var parent;
-  while (index !== 0) {
-    parent = index >> 1;
-    if (arr[parent].priority < priority) {
-      break;
-    }
-    this._swap(index, parent);
-    index = parent;
-  }
-};
-
-PriorityQueue.prototype._swap = function(i, j) {
-  var arr = this._arr;
-  var keyIndices = this._keyIndices;
-  var origArrI = arr[i];
-  var origArrJ = arr[j];
-  arr[i] = origArrJ;
-  arr[j] = origArrI;
-  keyIndices[origArrJ.key] = i;
-  keyIndices[origArrI.key] = j;
-};
-
-},{"../lodash":49}],46:[function(require,module,exports){
-"use strict";
-
-var _ = require("./lodash");
-
-module.exports = Graph;
-
-var DEFAULT_EDGE_NAME = "\x00";
-var GRAPH_NODE = "\x00";
-var EDGE_KEY_DELIM = "\x01";
-
-// Implementation notes:
-//
-//  * Node id query functions should return string ids for the nodes
-//  * Edge id query functions should return an "edgeObj", edge object, that is
-//    composed of enough information to uniquely identify an edge: {v, w, name}.
-//  * Internally we use an "edgeId", a stringified form of the edgeObj, to
-//    reference edges. This is because we need a performant way to look these
-//    edges up and, object properties, which have string keys, are the closest
-//    we're going to get to a performant hashtable in JavaScript.
-
-function Graph(opts) {
-  this._isDirected = _.has(opts, "directed") ? opts.directed : true;
-  this._isMultigraph = _.has(opts, "multigraph") ? opts.multigraph : false;
-  this._isCompound = _.has(opts, "compound") ? opts.compound : false;
-
-  // Label for the graph itself
-  this._label = undefined;
-
-  // Defaults to be set when creating a new node
-  this._defaultNodeLabelFn = _.constant(undefined);
-
-  // Defaults to be set when creating a new edge
-  this._defaultEdgeLabelFn = _.constant(undefined);
-
-  // v -> label
-  this._nodes = {};
-
-  if (this._isCompound) {
-    // v -> parent
-    this._parent = {};
-
-    // v -> children
-    this._children = {};
-    this._children[GRAPH_NODE] = {};
-  }
-
-  // v -> edgeObj
-  this._in = {};
-
-  // u -> v -> Number
-  this._preds = {};
-
-  // v -> edgeObj
-  this._out = {};
-
-  // v -> w -> Number
-  this._sucs = {};
-
-  // e -> edgeObj
-  this._edgeObjs = {};
-
-  // e -> label
-  this._edgeLabels = {};
-}
-
-/* Number of nodes in the graph. Should only be changed by the implementation. */
-Graph.prototype._nodeCount = 0;
-
-/* Number of edges in the graph. Should only be changed by the implementation. */
-Graph.prototype._edgeCount = 0;
-
-
-/* === Graph functions ========= */
-
-Graph.prototype.isDirected = function() {
-  return this._isDirected;
-};
-
-Graph.prototype.isMultigraph = function() {
-  return this._isMultigraph;
-};
-
-Graph.prototype.isCompound = function() {
-  return this._isCompound;
-};
-
-Graph.prototype.setGraph = function(label) {
-  this._label = label;
-  return this;
-};
-
-Graph.prototype.graph = function() {
-  return this._label;
-};
-
-
-/* === Node functions ========== */
-
-Graph.prototype.setDefaultNodeLabel = function(newDefault) {
-  if (!_.isFunction(newDefault)) {
-    newDefault = _.constant(newDefault);
-  }
-  this._defaultNodeLabelFn = newDefault;
-  return this;
-};
-
-Graph.prototype.nodeCount = function() {
-  return this._nodeCount;
-};
-
-Graph.prototype.nodes = function() {
-  return _.keys(this._nodes);
-};
-
-Graph.prototype.sources = function() {
-  var self = this;
-  return _.filter(this.nodes(), function(v) {
-    return _.isEmpty(self._in[v]);
-  });
-};
-
-Graph.prototype.sinks = function() {
-  var self = this;
-  return _.filter(this.nodes(), function(v) {
-    return _.isEmpty(self._out[v]);
-  });
-};
-
-Graph.prototype.setNodes = function(vs, value) {
-  var args = arguments;
-  var self = this;
-  _.each(vs, function(v) {
-    if (args.length > 1) {
-      self.setNode(v, value);
-    } else {
-      self.setNode(v);
-    }
-  });
-  return this;
-};
-
-Graph.prototype.setNode = function(v, value) {
-  if (_.has(this._nodes, v)) {
-    if (arguments.length > 1) {
-      this._nodes[v] = value;
-    }
-    return this;
-  }
-
-  this._nodes[v] = arguments.length > 1 ? value : this._defaultNodeLabelFn(v);
-  if (this._isCompound) {
-    this._parent[v] = GRAPH_NODE;
-    this._children[v] = {};
-    this._children[GRAPH_NODE][v] = true;
-  }
-  this._in[v] = {};
-  this._preds[v] = {};
-  this._out[v] = {};
-  this._sucs[v] = {};
-  ++this._nodeCount;
-  return this;
-};
-
-Graph.prototype.node = function(v) {
-  return this._nodes[v];
-};
-
-Graph.prototype.hasNode = function(v) {
-  return _.has(this._nodes, v);
-};
-
-Graph.prototype.removeNode =  function(v) {
-  var self = this;
-  if (_.has(this._nodes, v)) {
-    var removeEdge = function(e) { self.removeEdge(self._edgeObjs[e]); };
-    delete this._nodes[v];
-    if (this._isCompound) {
-      this._removeFromParentsChildList(v);
-      delete this._parent[v];
-      _.each(this.children(v), function(child) {
-        self.setParent(child);
-      });
-      delete this._children[v];
-    }
-    _.each(_.keys(this._in[v]), removeEdge);
-    delete this._in[v];
-    delete this._preds[v];
-    _.each(_.keys(this._out[v]), removeEdge);
-    delete this._out[v];
-    delete this._sucs[v];
-    --this._nodeCount;
-  }
-  return this;
-};
-
-Graph.prototype.setParent = function(v, parent) {
-  if (!this._isCompound) {
-    throw new Error("Cannot set parent in a non-compound graph");
-  }
-
-  if (_.isUndefined(parent)) {
-    parent = GRAPH_NODE;
-  } else {
-    // Coerce parent to string
-    parent += "";
-    for (var ancestor = parent;
-      !_.isUndefined(ancestor);
-      ancestor = this.parent(ancestor)) {
-      if (ancestor === v) {
-        throw new Error("Setting " + parent+ " as parent of " + v +
-                        " would create a cycle");
-      }
-    }
-
-    this.setNode(parent);
-  }
-
-  this.setNode(v);
-  this._removeFromParentsChildList(v);
-  this._parent[v] = parent;
-  this._children[parent][v] = true;
-  return this;
-};
-
-Graph.prototype._removeFromParentsChildList = function(v) {
-  delete this._children[this._parent[v]][v];
-};
-
-Graph.prototype.parent = function(v) {
-  if (this._isCompound) {
-    var parent = this._parent[v];
-    if (parent !== GRAPH_NODE) {
-      return parent;
-    }
-  }
-};
-
-Graph.prototype.children = function(v) {
-  if (_.isUndefined(v)) {
-    v = GRAPH_NODE;
-  }
-
-  if (this._isCompound) {
-    var children = this._children[v];
-    if (children) {
-      return _.keys(children);
-    }
-  } else if (v === GRAPH_NODE) {
-    return this.nodes();
-  } else if (this.hasNode(v)) {
-    return [];
-  }
-};
-
-Graph.prototype.predecessors = function(v) {
-  var predsV = this._preds[v];
-  if (predsV) {
-    return _.keys(predsV);
-  }
-};
-
-Graph.prototype.successors = function(v) {
-  var sucsV = this._sucs[v];
-  if (sucsV) {
-    return _.keys(sucsV);
-  }
-};
-
-Graph.prototype.neighbors = function(v) {
-  var preds = this.predecessors(v);
-  if (preds) {
-    return _.union(preds, this.successors(v));
-  }
-};
-
-Graph.prototype.isLeaf = function (v) {
-  var neighbors;
-  if (this.isDirected()) {
-    neighbors = this.successors(v);
-  } else {
-    neighbors = this.neighbors(v);
-  }
-  return neighbors.length === 0;
-};
-
-Graph.prototype.filterNodes = function(filter) {
-  var copy = new this.constructor({
-    directed: this._isDirected,
-    multigraph: this._isMultigraph,
-    compound: this._isCompound
-  });
-
-  copy.setGraph(this.graph());
-
-  var self = this;
-  _.each(this._nodes, function(value, v) {
-    if (filter(v)) {
-      copy.setNode(v, value);
-    }
-  });
-
-  _.each(this._edgeObjs, function(e) {
-    if (copy.hasNode(e.v) && copy.hasNode(e.w)) {
-      copy.setEdge(e, self.edge(e));
-    }
-  });
-
-  var parents = {};
-  function findParent(v) {
-    var parent = self.parent(v);
-    if (parent === undefined || copy.hasNode(parent)) {
-      parents[v] = parent;
-      return parent;
-    } else if (parent in parents) {
-      return parents[parent];
-    } else {
-      return findParent(parent);
-    }
-  }
-
-  if (this._isCompound) {
-    _.each(copy.nodes(), function(v) {
-      copy.setParent(v, findParent(v));
-    });
-  }
-
-  return copy;
-};
-
-/* === Edge functions ========== */
-
-Graph.prototype.setDefaultEdgeLabel = function(newDefault) {
-  if (!_.isFunction(newDefault)) {
-    newDefault = _.constant(newDefault);
-  }
-  this._defaultEdgeLabelFn = newDefault;
-  return this;
-};
-
-Graph.prototype.edgeCount = function() {
-  return this._edgeCount;
-};
-
-Graph.prototype.edges = function() {
-  return _.values(this._edgeObjs);
-};
-
-Graph.prototype.setPath = function(vs, value) {
-  var self = this;
-  var args = arguments;
-  _.reduce(vs, function(v, w) {
-    if (args.length > 1) {
-      self.setEdge(v, w, value);
-    } else {
-      self.setEdge(v, w);
-    }
-    return w;
-  });
-  return this;
-};
-
-/*
- * setEdge(v, w, [value, [name]])
- * setEdge({ v, w, [name] }, [value])
- */
-Graph.prototype.setEdge = function() {
-  var v, w, name, value;
-  var valueSpecified = false;
-  var arg0 = arguments[0];
-
-  if (typeof arg0 === "object" && arg0 !== null && "v" in arg0) {
-    v = arg0.v;
-    w = arg0.w;
-    name = arg0.name;
-    if (arguments.length === 2) {
-      value = arguments[1];
-      valueSpecified = true;
-    }
-  } else {
-    v = arg0;
-    w = arguments[1];
-    name = arguments[3];
-    if (arguments.length > 2) {
-      value = arguments[2];
-      valueSpecified = true;
-    }
-  }
-
-  v = "" + v;
-  w = "" + w;
-  if (!_.isUndefined(name)) {
-    name = "" + name;
-  }
-
-  var e = edgeArgsToId(this._isDirected, v, w, name);
-  if (_.has(this._edgeLabels, e)) {
-    if (valueSpecified) {
-      this._edgeLabels[e] = value;
-    }
-    return this;
-  }
-
-  if (!_.isUndefined(name) && !this._isMultigraph) {
-    throw new Error("Cannot set a named edge when isMultigraph = false");
-  }
-
-  // It didn't exist, so we need to create it.
-  // First ensure the nodes exist.
-  this.setNode(v);
-  this.setNode(w);
-
-  this._edgeLabels[e] = valueSpecified ? value : this._defaultEdgeLabelFn(v, w, name);
-
-  var edgeObj = edgeArgsToObj(this._isDirected, v, w, name);
-  // Ensure we add undirected edges in a consistent way.
-  v = edgeObj.v;
-  w = edgeObj.w;
-
-  Object.freeze(edgeObj);
-  this._edgeObjs[e] = edgeObj;
-  incrementOrInitEntry(this._preds[w], v);
-  incrementOrInitEntry(this._sucs[v], w);
-  this._in[w][e] = edgeObj;
-  this._out[v][e] = edgeObj;
-  this._edgeCount++;
-  return this;
-};
-
-Graph.prototype.edge = function(v, w, name) {
-  var e = (arguments.length === 1
-    ? edgeObjToId(this._isDirected, arguments[0])
-    : edgeArgsToId(this._isDirected, v, w, name));
-  return this._edgeLabels[e];
-};
-
-Graph.prototype.hasEdge = function(v, w, name) {
-  var e = (arguments.length === 1
-    ? edgeObjToId(this._isDirected, arguments[0])
-    : edgeArgsToId(this._isDirected, v, w, name));
-  return _.has(this._edgeLabels, e);
-};
-
-Graph.prototype.removeEdge = function(v, w, name) {
-  var e = (arguments.length === 1
-    ? edgeObjToId(this._isDirected, arguments[0])
-    : edgeArgsToId(this._isDirected, v, w, name));
-  var edge = this._edgeObjs[e];
-  if (edge) {
-    v = edge.v;
-    w = edge.w;
-    delete this._edgeLabels[e];
-    delete this._edgeObjs[e];
-    decrementOrRemoveEntry(this._preds[w], v);
-    decrementOrRemoveEntry(this._sucs[v], w);
-    delete this._in[w][e];
-    delete this._out[v][e];
-    this._edgeCount--;
-  }
-  return this;
-};
-
-Graph.prototype.inEdges = function(v, u) {
-  var inV = this._in[v];
-  if (inV) {
-    var edges = _.values(inV);
-    if (!u) {
-      return edges;
-    }
-    return _.filter(edges, function(edge) { return edge.v === u; });
-  }
-};
-
-Graph.prototype.outEdges = function(v, w) {
-  var outV = this._out[v];
-  if (outV) {
-    var edges = _.values(outV);
-    if (!w) {
-      return edges;
-    }
-    return _.filter(edges, function(edge) { return edge.w === w; });
-  }
-};
-
-Graph.prototype.nodeEdges = function(v, w) {
-  var inEdges = this.inEdges(v, w);
-  if (inEdges) {
-    return inEdges.concat(this.outEdges(v, w));
-  }
-};
-
-function incrementOrInitEntry(map, k) {
-  if (map[k]) {
-    map[k]++;
-  } else {
-    map[k] = 1;
-  }
-}
-
-function decrementOrRemoveEntry(map, k) {
-  if (!--map[k]) { delete map[k]; }
-}
-
-function edgeArgsToId(isDirected, v_, w_, name) {
-  var v = "" + v_;
-  var w = "" + w_;
-  if (!isDirected && v > w) {
-    var tmp = v;
-    v = w;
-    w = tmp;
-  }
-  return v + EDGE_KEY_DELIM + w + EDGE_KEY_DELIM +
-             (_.isUndefined(name) ? DEFAULT_EDGE_NAME : name);
-}
-
-function edgeArgsToObj(isDirected, v_, w_, name) {
-  var v = "" + v_;
-  var w = "" + w_;
-  if (!isDirected && v > w) {
-    var tmp = v;
-    v = w;
-    w = tmp;
-  }
-  var edgeObj =  { v: v, w: w };
-  if (name) {
-    edgeObj.name = name;
-  }
-  return edgeObj;
-}
-
-function edgeObjToId(isDirected, edgeObj) {
-  return edgeArgsToId(isDirected, edgeObj.v, edgeObj.w, edgeObj.name);
-}
-
-},{"./lodash":49}],47:[function(require,module,exports){
-// Includes only the "core" of graphlib
-module.exports = {
-  Graph: require("./graph"),
-  version: require("./version")
-};
-
-},{"./graph":46,"./version":50}],48:[function(require,module,exports){
-var _ = require("./lodash");
-var Graph = require("./graph");
-
-module.exports = {
-  write: write,
-  read: read
-};
-
-function write(g) {
-  var json = {
-    options: {
-      directed: g.isDirected(),
-      multigraph: g.isMultigraph(),
-      compound: g.isCompound()
-    },
-    nodes: writeNodes(g),
-    edges: writeEdges(g)
-  };
-  if (!_.isUndefined(g.graph())) {
-    json.value = _.clone(g.graph());
-  }
-  return json;
-}
-
-function writeNodes(g) {
-  return _.map(g.nodes(), function(v) {
-    var nodeValue = g.node(v);
-    var parent = g.parent(v);
-    var node = { v: v };
-    if (!_.isUndefined(nodeValue)) {
-      node.value = nodeValue;
-    }
-    if (!_.isUndefined(parent)) {
-      node.parent = parent;
-    }
-    return node;
-  });
-}
-
-function writeEdges(g) {
-  return _.map(g.edges(), function(e) {
-    var edgeValue = g.edge(e);
-    var edge = { v: e.v, w: e.w };
-    if (!_.isUndefined(e.name)) {
-      edge.name = e.name;
-    }
-    if (!_.isUndefined(edgeValue)) {
-      edge.value = edgeValue;
-    }
-    return edge;
-  });
-}
-
-function read(json) {
-  var g = new Graph(json.options).setGraph(json.value);
-  _.each(json.nodes, function(entry) {
-    g.setNode(entry.v, entry.value);
-    if (entry.parent) {
-      g.setParent(entry.v, entry.parent);
-    }
-  });
-  _.each(json.edges, function(entry) {
-    g.setEdge({ v: entry.v, w: entry.w, name: entry.name }, entry.value);
-  });
-  return g;
-}
-
-},{"./graph":46,"./lodash":49}],49:[function(require,module,exports){
-/* global window */
-
-var lodash;
-
-if (typeof require === "function") {
-  try {
-    lodash = {
-      clone: require("lodash/clone"),
-      constant: require("lodash/constant"),
-      each: require("lodash/each"),
-      filter: require("lodash/filter"),
-      has:  require("lodash/has"),
-      isArray: require("lodash/isArray"),
-      isEmpty: require("lodash/isEmpty"),
-      isFunction: require("lodash/isFunction"),
-      isUndefined: require("lodash/isUndefined"),
-      keys: require("lodash/keys"),
-      map: require("lodash/map"),
-      reduce: require("lodash/reduce"),
-      size: require("lodash/size"),
-      transform: require("lodash/transform"),
-      union: require("lodash/union"),
-      values: require("lodash/values")
-    };
-  } catch (e) {
-    // continue regardless of error
-  }
-}
-
-if (!lodash) {
-  lodash = window._;
-}
-
-module.exports = lodash;
-
-},{"lodash/clone":226,"lodash/constant":228,"lodash/each":230,"lodash/filter":232,"lodash/has":239,"lodash/isArray":243,"lodash/isEmpty":247,"lodash/isFunction":248,"lodash/isUndefined":258,"lodash/keys":259,"lodash/map":262,"lodash/reduce":274,"lodash/size":275,"lodash/transform":284,"lodash/union":285,"lodash/values":287}],50:[function(require,module,exports){
-module.exports = '2.1.8';
-
-},{}],51:[function(require,module,exports){
-var getNative = require('./_getNative'),
-    root = require('./_root');
-
-/* Built-in method references that are verified to be native. */
-var DataView = getNative(root, 'DataView');
-
-module.exports = DataView;
-
-},{"./_getNative":163,"./_root":208}],52:[function(require,module,exports){
-var hashClear = require('./_hashClear'),
-    hashDelete = require('./_hashDelete'),
-    hashGet = require('./_hashGet'),
-    hashHas = require('./_hashHas'),
-    hashSet = require('./_hashSet');
-
-/**
- * Creates a hash object.
- *
- * @private
- * @constructor
- * @param {Array} [entries] The key-value pairs to cache.
- */
-function Hash(entries) {
-  var index = -1,
-      length = entries == null ? 0 : entries.length;
-
-  this.clear();
-  while (++index < length) {
-    var entry = entries[index];
-    this.set(entry[0], entry[1]);
-  }
-}
-
-// Add methods to `Hash`.
-Hash.prototype.clear = hashClear;
-Hash.prototype['delete'] = hashDelete;
-Hash.prototype.get = hashGet;
-Hash.prototype.has = hashHas;
-Hash.prototype.set = hashSet;
-
-module.exports = Hash;
-
-},{"./_hashClear":172,"./_hashDelete":173,"./_hashGet":174,"./_hashHas":175,"./_hashSet":176}],53:[function(require,module,exports){
-var listCacheClear = require('./_listCacheClear'),
-    listCacheDelete = require('./_listCacheDelete'),
-    listCacheGet = require('./_listCacheGet'),
-    listCacheHas = require('./_listCacheHas'),
-    listCacheSet = require('./_listCacheSet');
-
-/**
- * Creates an list cache object.
- *
- * @private
- * @constructor
- * @param {Array} [entries] The key-value pairs to cache.
- */
-function ListCache(entries) {
-  var index = -1,
-      length = entries == null ? 0 : entries.length;
-
-  this.clear();
-  while (++index < length) {
-    var entry = entries[index];
-    this.set(entry[0], entry[1]);
-  }
-}
-
-// Add methods to `ListCache`.
-ListCache.prototype.clear = listCacheClear;
-ListCache.prototype['delete'] = listCacheDelete;
-ListCache.prototype.get = listCacheGet;
-ListCache.prototype.has = listCacheHas;
-ListCache.prototype.set = listCacheSet;
-
-module.exports = ListCache;
-
-},{"./_listCacheClear":188,"./_listCacheDelete":189,"./_listCacheGet":190,"./_listCacheHas":191,"./_listCacheSet":192}],54:[function(require,module,exports){
-var getNative = require('./_getNative'),
-    root = require('./_root');
-
-/* Built-in method references that are verified to be native. */
-var Map = getNative(root, 'Map');
-
-module.exports = Map;
-
-},{"./_getNative":163,"./_root":208}],55:[function(require,module,exports){
-var mapCacheClear = require('./_mapCacheClear'),
-    mapCacheDelete = require('./_mapCacheDelete'),
-    mapCacheGet = require('./_mapCacheGet'),
-    mapCacheHas = require('./_mapCacheHas'),
-    mapCacheSet = require('./_mapCacheSet');
-
-/**
- * Creates a map cache object to store key-value pairs.
- *
- * @private
- * @constructor
- * @param {Array} [entries] The key-value pairs to cache.
- */
-function MapCache(entries) {
-  var index = -1,
-      length = entries == null ? 0 : entries.length;
-
-  this.clear();
-  while (++index < length) {
-    var entry = entries[index];
-    this.set(entry[0], entry[1]);
-  }
-}
-
-// Add methods to `MapCache`.
-MapCache.prototype.clear = mapCacheClear;
-MapCache.prototype['delete'] = mapCacheDelete;
-MapCache.prototype.get = mapCacheGet;
-MapCache.prototype.has = mapCacheHas;
-MapCache.prototype.set = mapCacheSet;
-
-module.exports = MapCache;
-
-},{"./_mapCacheClear":193,"./_mapCacheDelete":194,"./_mapCacheGet":195,"./_mapCacheHas":196,"./_mapCacheSet":197}],56:[function(require,module,exports){
-var getNative = require('./_getNative'),
-    root = require('./_root');
-
-/* Built-in method references that are verified to be native. */
-var Promise = getNative(root, 'Promise');
-
-module.exports = Promise;
-
-},{"./_getNative":163,"./_root":208}],57:[function(require,module,exports){
-var getNative = require('./_getNative'),
-    root = require('./_root');
-
-/* Built-in method references that are verified to be native. */
-var Set = getNative(root, 'Set');
-
-module.exports = Set;
-
-},{"./_getNative":163,"./_root":208}],58:[function(require,module,exports){
-var MapCache = require('./_MapCache'),
-    setCacheAdd = require('./_setCacheAdd'),
-    setCacheHas = require('./_setCacheHas');
-
-/**
- *
- * Creates an array cache object to store unique values.
- *
- * @private
- * @constructor
- * @param {Array} [values] The values to cache.
- */
-function SetCache(values) {
-  var index = -1,
-      length = values == null ? 0 : values.length;
-
-  this.__data__ = new MapCache;
-  while (++index < length) {
-    this.add(values[index]);
-  }
-}
-
-// Add methods to `SetCache`.
-SetCache.prototype.add = SetCache.prototype.push = setCacheAdd;
-SetCache.prototype.has = setCacheHas;
-
-module.exports = SetCache;
-
-},{"./_MapCache":55,"./_setCacheAdd":210,"./_setCacheHas":211}],59:[function(require,module,exports){
-var ListCache = require('./_ListCache'),
-    stackClear = require('./_stackClear'),
-    stackDelete = require('./_stackDelete'),
-    stackGet = require('./_stackGet'),
-    stackHas = require('./_stackHas'),
-    stackSet = require('./_stackSet');
-
-/**
- * Creates a stack cache object to store key-value pairs.
- *
- * @private
- * @constructor
- * @param {Array} [entries] The key-value pairs to cache.
- */
-function Stack(entries) {
-  var data = this.__data__ = new ListCache(entries);
-  this.size = data.size;
-}
-
-// Add methods to `Stack`.
-Stack.prototype.clear = stackClear;
-Stack.prototype['delete'] = stackDelete;
-Stack.prototype.get = stackGet;
-Stack.prototype.has = stackHas;
-Stack.prototype.set = stackSet;
-
-module.exports = Stack;
-
-},{"./_ListCache":53,"./_stackClear":215,"./_stackDelete":216,"./_stackGet":217,"./_stackHas":218,"./_stackSet":219}],60:[function(require,module,exports){
-var root = require('./_root');
-
-/** Built-in value references. */
-var Symbol = root.Symbol;
-
-module.exports = Symbol;
-
-},{"./_root":208}],61:[function(require,module,exports){
-var root = require('./_root');
-
-/** Built-in value references. */
-var Uint8Array = root.Uint8Array;
-
-module.exports = Uint8Array;
-
-},{"./_root":208}],62:[function(require,module,exports){
-var getNative = require('./_getNative'),
-    root = require('./_root');
-
-/* Built-in method references that are verified to be native. */
-var WeakMap = getNative(root, 'WeakMap');
-
-module.exports = WeakMap;
-
-},{"./_getNative":163,"./_root":208}],63:[function(require,module,exports){
-/**
- * A faster alternative to `Function#apply`, this function invokes `func`
- * with the `this` binding of `thisArg` and the arguments of `args`.
- *
- * @private
- * @param {Function} func The function to invoke.
- * @param {*} thisArg The `this` binding of `func`.
- * @param {Array} args The arguments to invoke `func` with.
- * @returns {*} Returns the result of `func`.
- */
-function apply(func, thisArg, args) {
-  switch (args.length) {
-    case 0: return func.call(thisArg);
-    case 1: return func.call(thisArg, args[0]);
-    case 2: return func.call(thisArg, args[0], args[1]);
-    case 3: return func.call(thisArg, args[0], args[1], args[2]);
-  }
-  return func.apply(thisArg, args);
-}
-
-module.exports = apply;
-
-},{}],64:[function(require,module,exports){
-/**
- * A specialized version of `_.forEach` for arrays without support for
- * iteratee shorthands.
- *
- * @private
- * @param {Array} [array] The array to iterate over.
- * @param {Function} iteratee The function invoked per iteration.
- * @returns {Array} Returns `array`.
- */
-function arrayEach(array, iteratee) {
-  var index = -1,
-      length = array == null ? 0 : array.length;
-
-  while (++index < length) {
-    if (iteratee(array[index], index, array) === false) {
-      break;
-    }
-  }
-  return array;
-}
-
-module.exports = arrayEach;
-
-},{}],65:[function(require,module,exports){
-/**
- * A specialized version of `_.filter` for arrays without support for
- * iteratee shorthands.
- *
- * @private
- * @param {Array} [array] The array to iterate over.
- * @param {Function} predicate The function invoked per iteration.
- * @returns {Array} Returns the new filtered array.
- */
-function arrayFilter(array, predicate) {
-  var index = -1,
-      length = array == null ? 0 : array.length,
-      resIndex = 0,
-      result = [];
-
-  while (++index < length) {
-    var value = array[index];
-    if (predicate(value, index, array)) {
-      result[resIndex++] = value;
-    }
-  }
-  return result;
-}
-
-module.exports = arrayFilter;
-
-},{}],66:[function(require,module,exports){
-var baseIndexOf = require('./_baseIndexOf');
-
-/**
- * A specialized version of `_.includes` for arrays without support for
- * specifying an index to search from.
- *
- * @private
- * @param {Array} [array] The array to inspect.
- * @param {*} target The value to search for.
- * @returns {boolean} Returns `true` if `target` is found, else `false`.
- */
-function arrayIncludes(array, value) {
-  var length = array == null ? 0 : array.length;
-  return !!length && baseIndexOf(array, value, 0) > -1;
-}
-
-module.exports = arrayIncludes;
-
-},{"./_baseIndexOf":95}],67:[function(require,module,exports){
-/**
- * This function is like `arrayIncludes` except that it accepts a comparator.
- *
- * @private
- * @param {Array} [array] The array to inspect.
- * @param {*} target The value to search for.
- * @param {Function} comparator The comparator invoked per element.
- * @returns {boolean} Returns `true` if `target` is found, else `false`.
- */
-function arrayIncludesWith(array, value, comparator) {
-  var index = -1,
-      length = array == null ? 0 : array.length;
-
-  while (++index < length) {
-    if (comparator(value, array[index])) {
-      return true;
-    }
-  }
-  return false;
-}
-
-module.exports = arrayIncludesWith;
-
-},{}],68:[function(require,module,exports){
-var baseTimes = require('./_baseTimes'),
-    isArguments = require('./isArguments'),
-    isArray = require('./isArray'),
-    isBuffer = require('./isBuffer'),
-    isIndex = require('./_isIndex'),
-    isTypedArray = require('./isTypedArray');
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Creates an array of the enumerable property names of the array-like `value`.
- *
- * @private
- * @param {*} value The value to query.
- * @param {boolean} inherited Specify returning inherited property names.
- * @returns {Array} Returns the array of property names.
- */
-function arrayLikeKeys(value, inherited) {
-  var isArr = isArray(value),
-      isArg = !isArr && isArguments(value),
-      isBuff = !isArr && !isArg && isBuffer(value),
-      isType = !isArr && !isArg && !isBuff && isTypedArray(value),
-      skipIndexes = isArr || isArg || isBuff || isType,
-      result = skipIndexes ? baseTimes(value.length, String) : [],
-      length = result.length;
-
-  for (var key in value) {
-    if ((inherited || hasOwnProperty.call(value, key)) &&
-        !(skipIndexes && (
-           // Safari 9 has enumerable `arguments.length` in strict mode.
-           key == 'length' ||
-           // Node.js 0.10 has enumerable non-index properties on buffers.
-           (isBuff && (key == 'offset' || key == 'parent')) ||
-           // PhantomJS 2 has enumerable non-index properties on typed arrays.
-           (isType && (key == 'buffer' || key == 'byteLength' || key == 'byteOffset')) ||
-           // Skip index properties.
-           isIndex(key, length)
-        ))) {
-      result.push(key);
-    }
-  }
-  return result;
-}
-
-module.exports = arrayLikeKeys;
-
-},{"./_baseTimes":125,"./_isIndex":181,"./isArguments":242,"./isArray":243,"./isBuffer":246,"./isTypedArray":257}],69:[function(require,module,exports){
-/**
- * A specialized version of `_.map` for arrays without support for iteratee
- * shorthands.
- *
- * @private
- * @param {Array} [array] The array to iterate over.
- * @param {Function} iteratee The function invoked per iteration.
- * @returns {Array} Returns the new mapped array.
- */
-function arrayMap(array, iteratee) {
-  var index = -1,
-      length = array == null ? 0 : array.length,
-      result = Array(length);
-
-  while (++index < length) {
-    result[index] = iteratee(array[index], index, array);
-  }
-  return result;
-}
-
-module.exports = arrayMap;
-
-},{}],70:[function(require,module,exports){
-/**
- * Appends the elements of `values` to `array`.
- *
- * @private
- * @param {Array} array The array to modify.
- * @param {Array} values The values to append.
- * @returns {Array} Returns `array`.
- */
-function arrayPush(array, values) {
-  var index = -1,
-      length = values.length,
-      offset = array.length;
-
-  while (++index < length) {
-    array[offset + index] = values[index];
-  }
-  return array;
-}
-
-module.exports = arrayPush;
-
-},{}],71:[function(require,module,exports){
-/**
- * A specialized version of `_.reduce` for arrays without support for
- * iteratee shorthands.
- *
- * @private
- * @param {Array} [array] The array to iterate over.
- * @param {Function} iteratee The function invoked per iteration.
- * @param {*} [accumulator] The initial value.
- * @param {boolean} [initAccum] Specify using the first element of `array` as
- *  the initial value.
- * @returns {*} Returns the accumulated value.
- */
-function arrayReduce(array, iteratee, accumulator, initAccum) {
-  var index = -1,
-      length = array == null ? 0 : array.length;
-
-  if (initAccum && length) {
-    accumulator = array[++index];
-  }
-  while (++index < length) {
-    accumulator = iteratee(accumulator, array[index], index, array);
-  }
-  return accumulator;
-}
-
-module.exports = arrayReduce;
-
-},{}],72:[function(require,module,exports){
-/**
- * A specialized version of `_.some` for arrays without support for iteratee
- * shorthands.
- *
- * @private
- * @param {Array} [array] The array to iterate over.
- * @param {Function} predicate The function invoked per iteration.
- * @returns {boolean} Returns `true` if any element passes the predicate check,
- *  else `false`.
- */
-function arraySome(array, predicate) {
-  var index = -1,
-      length = array == null ? 0 : array.length;
-
-  while (++index < length) {
-    if (predicate(array[index], index, array)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-module.exports = arraySome;
-
-},{}],73:[function(require,module,exports){
-var baseProperty = require('./_baseProperty');
-
-/**
- * Gets the size of an ASCII `string`.
- *
- * @private
- * @param {string} string The string inspect.
- * @returns {number} Returns the string size.
- */
-var asciiSize = baseProperty('length');
-
-module.exports = asciiSize;
-
-},{"./_baseProperty":117}],74:[function(require,module,exports){
-var baseAssignValue = require('./_baseAssignValue'),
-    eq = require('./eq');
-
-/**
- * This function is like `assignValue` except that it doesn't assign
- * `undefined` values.
- *
- * @private
- * @param {Object} object The object to modify.
- * @param {string} key The key of the property to assign.
- * @param {*} value The value to assign.
- */
-function assignMergeValue(object, key, value) {
-  if ((value !== undefined && !eq(object[key], value)) ||
-      (value === undefined && !(key in object))) {
-    baseAssignValue(object, key, value);
-  }
-}
-
-module.exports = assignMergeValue;
-
-},{"./_baseAssignValue":79,"./eq":231}],75:[function(require,module,exports){
-var baseAssignValue = require('./_baseAssignValue'),
-    eq = require('./eq');
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Assigns `value` to `key` of `object` if the existing value is not equivalent
- * using [`SameValueZero`](http://ecma-international.org/ecma-262/7.0/#sec-samevaluezero)
- * for equality comparisons.
- *
- * @private
- * @param {Object} object The object to modify.
- * @param {string} key The key of the property to assign.
- * @param {*} value The value to assign.
- */
-function assignValue(object, key, value) {
-  var objValue = object[key];
-  if (!(hasOwnProperty.call(object, key) && eq(objValue, value)) ||
-      (value === undefined && !(key in object))) {
-    baseAssignValue(object, key, value);
-  }
-}
-
-module.exports = assignValue;
-
-},{"./_baseAssignValue":79,"./eq":231}],76:[function(require,module,exports){
-var eq = require('./eq');
-
-/**
- * Gets the index at which the `key` is found in `array` of key-value pairs.
- *
- * @private
- * @param {Array} array The array to inspect.
- * @param {*} key The key to search for.
- * @returns {number} Returns the index of the matched value, else `-1`.
- */
-function assocIndexOf(array, key) {
-  var length = array.length;
-  while (length--) {
-    if (eq(array[length][0], key)) {
-      return length;
-    }
-  }
-  return -1;
-}
-
-module.exports = assocIndexOf;
-
-},{"./eq":231}],77:[function(require,module,exports){
-var copyObject = require('./_copyObject'),
-    keys = require('./keys');
-
-/**
- * The base implementation of `_.assign` without support for multiple sources
- * or `customizer` functions.
- *
- * @private
- * @param {Object} object The destination object.
- * @param {Object} source The source object.
- * @returns {Object} Returns `object`.
- */
-function baseAssign(object, source) {
-  return object && copyObject(source, keys(source), object);
-}
-
-module.exports = baseAssign;
-
-},{"./_copyObject":143,"./keys":259}],78:[function(require,module,exports){
-var copyObject = require('./_copyObject'),
-    keysIn = require('./keysIn');
-
-/**
- * The base implementation of `_.assignIn` without support for multiple sources
- * or `customizer` functions.
- *
- * @private
- * @param {Object} object The destination object.
- * @param {Object} source The source object.
- * @returns {Object} Returns `object`.
- */
-function baseAssignIn(object, source) {
-  return object && copyObject(source, keysIn(source), object);
-}
-
-module.exports = baseAssignIn;
-
-},{"./_copyObject":143,"./keysIn":260}],79:[function(require,module,exports){
-var defineProperty = require('./_defineProperty');
-
-/**
- * The base implementation of `assignValue` and `assignMergeValue` without
- * value checks.
- *
- * @private
- * @param {Object} object The object to modify.
- * @param {string} key The key of the property to assign.
- * @param {*} value The value to assign.
- */
-function baseAssignValue(object, key, value) {
-  if (key == '__proto__' && defineProperty) {
-    defineProperty(object, key, {
-      'configurable': true,
-      'enumerable': true,
-      'value': value,
-      'writable': true
-    });
-  } else {
-    object[key] = value;
-  }
-}
-
-module.exports = baseAssignValue;
-
-},{"./_defineProperty":153}],80:[function(require,module,exports){
-var Stack = require('./_Stack'),
-    arrayEach = require('./_arrayEach'),
-    assignValue = require('./_assignValue'),
-    baseAssign = require('./_baseAssign'),
-    baseAssignIn = require('./_baseAssignIn'),
-    cloneBuffer = require('./_cloneBuffer'),
-    copyArray = require('./_copyArray'),
-    copySymbols = require('./_copySymbols'),
-    copySymbolsIn = require('./_copySymbolsIn'),
-    getAllKeys = require('./_getAllKeys'),
-    getAllKeysIn = require('./_getAllKeysIn'),
-    getTag = require('./_getTag'),
-    initCloneArray = require('./_initCloneArray'),
-    initCloneByTag = require('./_initCloneByTag'),
-    initCloneObject = require('./_initCloneObject'),
-    isArray = require('./isArray'),
-    isBuffer = require('./isBuffer'),
-    isMap = require('./isMap'),
-    isObject = require('./isObject'),
-    isSet = require('./isSet'),
-    keys = require('./keys');
-
-/** Used to compose bitmasks for cloning. */
-var CLONE_DEEP_FLAG = 1,
-    CLONE_FLAT_FLAG = 2,
-    CLONE_SYMBOLS_FLAG = 4;
-
-/** `Object#toString` result references. */
-var argsTag = '[object Arguments]',
-    arrayTag = '[object Array]',
-    boolTag = '[object Boolean]',
-    dateTag = '[object Date]',
-    errorTag = '[object Error]',
-    funcTag = '[object Function]',
-    genTag = '[object GeneratorFunction]',
-    mapTag = '[object Map]',
-    numberTag = '[object Number]',
-    objectTag = '[object Object]',
-    regexpTag = '[object RegExp]',
-    setTag = '[object Set]',
-    stringTag = '[object String]',
-    symbolTag = '[object Symbol]',
-    weakMapTag = '[object WeakMap]';
-
-var arrayBufferTag = '[object ArrayBuffer]',
-    dataViewTag = '[object DataView]',
-    float32Tag = '[object Float32Array]',
-    float64Tag = '[object Float64Array]',
-    int8Tag = '[object Int8Array]',
-    int16Tag = '[object Int16Array]',
-    int32Tag = '[object Int32Array]',
-    uint8Tag = '[object Uint8Array]',
-    uint8ClampedTag = '[object Uint8ClampedArray]',
-    uint16Tag = '[object Uint16Array]',
-    uint32Tag = '[object Uint32Array]';
-
-/** Used to identify `toStringTag` values supported by `_.clone`. */
-var cloneableTags = {};
-cloneableTags[argsTag] = cloneableTags[arrayTag] =
-cloneableTags[arrayBufferTag] = cloneableTags[dataViewTag] =
-cloneableTags[boolTag] = cloneableTags[dateTag] =
-cloneableTags[float32Tag] = cloneableTags[float64Tag] =
-cloneableTags[int8Tag] = cloneableTags[int16Tag] =
-cloneableTags[int32Tag] = cloneableTags[mapTag] =
-cloneableTags[numberTag] = cloneableTags[objectTag] =
-cloneableTags[regexpTag] = cloneableTags[setTag] =
-cloneableTags[stringTag] = cloneableTags[symbolTag] =
-cloneableTags[uint8Tag] = cloneableTags[uint8ClampedTag] =
-cloneableTags[uint16Tag] = cloneableTags[uint32Tag] = true;
-cloneableTags[errorTag] = cloneableTags[funcTag] =
-cloneableTags[weakMapTag] = false;
-
-/**
- * The base implementation of `_.clone` and `_.cloneDeep` which tracks
- * traversed objects.
- *
- * @private
- * @param {*} value The value to clone.
- * @param {boolean} bitmask The bitmask flags.
- *  1 - Deep clone
- *  2 - Flatten inherited properties
- *  4 - Clone symbols
- * @param {Function} [customizer] The function to customize cloning.
- * @param {string} [key] The key of `value`.
- * @param {Object} [object] The parent object of `value`.
- * @param {Object} [stack] Tracks traversed objects and their clone counterparts.
- * @returns {*} Returns the cloned value.
- */
-function baseClone(value, bitmask, customizer, key, object, stack) {
-  var result,
-      isDeep = bitmask & CLONE_DEEP_FLAG,
-      isFlat = bitmask & CLONE_FLAT_FLAG,
-      isFull = bitmask & CLONE_SYMBOLS_FLAG;
-
-  if (customizer) {
-    result = object ? customizer(value, key, object, stack) : customizer(value);
-  }
-  if (result !== undefined) {
-    return result;
-  }
-  if (!isObject(value)) {
-    return value;
-  }
-  var isArr = isArray(value);
-  if (isArr) {
-    result = initCloneArray(value);
-    if (!isDeep) {
-      return copyArray(value, result);
-    }
-  } else {
-    var tag = getTag(value),
-        isFunc = tag == funcTag || tag == genTag;
-
-    if (isBuffer(value)) {
-      return cloneBuffer(value, isDeep);
-    }
-    if (tag == objectTag || tag == argsTag || (isFunc && !object)) {
-      result = (isFlat || isFunc) ? {} : initCloneObject(value);
-      if (!isDeep) {
-        return isFlat
-          ? copySymbolsIn(value, baseAssignIn(result, value))
-          : copySymbols(value, baseAssign(result, value));
-      }
-    } else {
-      if (!cloneableTags[tag]) {
-        return object ? value : {};
-      }
-      result = initCloneByTag(value, tag, isDeep);
-    }
-  }
-  // Check for circular references and return its corresponding clone.
-  stack || (stack = new Stack);
-  var stacked = stack.get(value);
-  if (stacked) {
-    return stacked;
-  }
-  stack.set(value, result);
-
-  if (isSet(value)) {
-    value.forEach(function(subValue) {
-      result.add(baseClone(subValue, bitmask, customizer, subValue, value, stack));
-    });
-  } else if (isMap(value)) {
-    value.forEach(function(subValue, key) {
-      result.set(key, baseClone(subValue, bitmask, customizer, key, value, stack));
-    });
-  }
-
-  var keysFunc = isFull
-    ? (isFlat ? getAllKeysIn : getAllKeys)
-    : (isFlat ? keysIn : keys);
-
-  var props = isArr ? undefined : keysFunc(value);
-  arrayEach(props || value, function(subValue, key) {
-    if (props) {
-      key = subValue;
-      subValue = value[key];
-    }
-    // Recursively populate clone (susceptible to call stack limits).
-    assignValue(result, key, baseClone(subValue, bitmask, customizer, key, value, stack));
-  });
-  return result;
-}
-
-module.exports = baseClone;
-
-},{"./_Stack":59,"./_arrayEach":64,"./_assignValue":75,"./_baseAssign":77,"./_baseAssignIn":78,"./_cloneBuffer":135,"./_copyArray":142,"./_copySymbols":144,"./_copySymbolsIn":145,"./_getAllKeys":159,"./_getAllKeysIn":160,"./_getTag":168,"./_initCloneArray":177,"./_initCloneByTag":178,"./_initCloneObject":179,"./isArray":243,"./isBuffer":246,"./isMap":250,"./isObject":251,"./isSet":254,"./keys":259}],81:[function(require,module,exports){
-var isObject = require('./isObject');
-
-/** Built-in value references. */
-var objectCreate = Object.create;
-
-/**
- * The base implementation of `_.create` without support for assigning
- * properties to the created object.
- *
- * @private
- * @param {Object} proto The object to inherit from.
- * @returns {Object} Returns the new object.
- */
-var baseCreate = (function() {
-  function object() {}
-  return function(proto) {
-    if (!isObject(proto)) {
-      return {};
-    }
-    if (objectCreate) {
-      return objectCreate(proto);
-    }
-    object.prototype = proto;
-    var result = new object;
-    object.prototype = undefined;
-    return result;
-  };
-}());
-
-module.exports = baseCreate;
-
-},{"./isObject":251}],82:[function(require,module,exports){
-var baseForOwn = require('./_baseForOwn'),
-    createBaseEach = require('./_createBaseEach');
-
-/**
- * The base implementation of `_.forEach` without support for iteratee shorthands.
- *
- * @private
- * @param {Array|Object} collection The collection to iterate over.
- * @param {Function} iteratee The function invoked per iteration.
- * @returns {Array|Object} Returns `collection`.
- */
-var baseEach = createBaseEach(baseForOwn);
-
-module.exports = baseEach;
-
-},{"./_baseForOwn":88,"./_createBaseEach":148}],83:[function(require,module,exports){
-var isSymbol = require('./isSymbol');
-
-/**
- * The base implementation of methods like `_.max` and `_.min` which accepts a
- * `comparator` to determine the extremum value.
- *
- * @private
- * @param {Array} array The array to iterate over.
- * @param {Function} iteratee The iteratee invoked per iteration.
- * @param {Function} comparator The comparator used to compare values.
- * @returns {*} Returns the extremum value.
- */
-function baseExtremum(array, iteratee, comparator) {
-  var index = -1,
-      length = array.length;
-
-  while (++index < length) {
-    var value = array[index],
-        current = iteratee(value);
-
-    if (current != null && (computed === undefined
-          ? (current === current && !isSymbol(current))
-          : comparator(current, computed)
-        )) {
-      var computed = current,
-          result = value;
-    }
-  }
-  return result;
-}
-
-module.exports = baseExtremum;
-
-},{"./isSymbol":256}],84:[function(require,module,exports){
-var baseEach = require('./_baseEach');
-
-/**
- * The base implementation of `_.filter` without support for iteratee shorthands.
- *
- * @private
- * @param {Array|Object} collection The collection to iterate over.
- * @param {Function} predicate The function invoked per iteration.
- * @returns {Array} Returns the new filtered array.
- */
-function baseFilter(collection, predicate) {
-  var result = [];
-  baseEach(collection, function(value, index, collection) {
-    if (predicate(value, index, collection)) {
-      result.push(value);
-    }
-  });
-  return result;
-}
-
-module.exports = baseFilter;
-
-},{"./_baseEach":82}],85:[function(require,module,exports){
-/**
- * The base implementation of `_.findIndex` and `_.findLastIndex` without
- * support for iteratee shorthands.
- *
- * @private
- * @param {Array} array The array to inspect.
- * @param {Function} predicate The function invoked per iteration.
- * @param {number} fromIndex The index to search from.
- * @param {boolean} [fromRight] Specify iterating from right to left.
- * @returns {number} Returns the index of the matched value, else `-1`.
- */
-function baseFindIndex(array, predicate, fromIndex, fromRight) {
-  var length = array.length,
-      index = fromIndex + (fromRight ? 1 : -1);
-
-  while ((fromRight ? index-- : ++index < length)) {
-    if (predicate(array[index], index, array)) {
-      return index;
-    }
-  }
-  return -1;
-}
-
-module.exports = baseFindIndex;
-
-},{}],86:[function(require,module,exports){
-var arrayPush = require('./_arrayPush'),
-    isFlattenable = require('./_isFlattenable');
-
-/**
- * The base implementation of `_.flatten` with support for restricting flattening.
- *
- * @private
- * @param {Array} array The array to flatten.
- * @param {number} depth The maximum recursion depth.
- * @param {boolean} [predicate=isFlattenable] The function invoked per iteration.
- * @param {boolean} [isStrict] Restrict to values that pass `predicate` checks.
- * @param {Array} [result=[]] The initial result value.
- * @returns {Array} Returns the new flattened array.
- */
-function baseFlatten(array, depth, predicate, isStrict, result) {
-  var index = -1,
-      length = array.length;
-
-  predicate || (predicate = isFlattenable);
-  result || (result = []);
-
-  while (++index < length) {
-    var value = array[index];
-    if (depth > 0 && predicate(value)) {
-      if (depth > 1) {
-        // Recursively flatten arrays (susceptible to call stack limits).
-        baseFlatten(value, depth - 1, predicate, isStrict, result);
-      } else {
-        arrayPush(result, value);
-      }
-    } else if (!isStrict) {
-      result[result.length] = value;
-    }
-  }
-  return result;
-}
-
-module.exports = baseFlatten;
-
-},{"./_arrayPush":70,"./_isFlattenable":180}],87:[function(require,module,exports){
-var createBaseFor = require('./_createBaseFor');
-
-/**
- * The base implementation of `baseForOwn` which iterates over `object`
- * properties returned by `keysFunc` and invokes `iteratee` for each property.
- * Iteratee functions may exit iteration early by explicitly returning `false`.
- *
- * @private
- * @param {Object} object The object to iterate over.
- * @param {Function} iteratee The function invoked per iteration.
- * @param {Function} keysFunc The function to get the keys of `object`.
- * @returns {Object} Returns `object`.
- */
-var baseFor = createBaseFor();
-
-module.exports = baseFor;
-
-},{"./_createBaseFor":149}],88:[function(require,module,exports){
-var baseFor = require('./_baseFor'),
-    keys = require('./keys');
-
-/**
- * The base implementation of `_.forOwn` without support for iteratee shorthands.
- *
- * @private
- * @param {Object} object The object to iterate over.
- * @param {Function} iteratee The function invoked per iteration.
- * @returns {Object} Returns `object`.
- */
-function baseForOwn(object, iteratee) {
-  return object && baseFor(object, iteratee, keys);
-}
-
-module.exports = baseForOwn;
-
-},{"./_baseFor":87,"./keys":259}],89:[function(require,module,exports){
-var castPath = require('./_castPath'),
-    toKey = require('./_toKey');
-
-/**
- * The base implementation of `_.get` without support for default values.
- *
- * @private
- * @param {Object} object The object to query.
- * @param {Array|string} path The path of the property to get.
- * @returns {*} Returns the resolved value.
- */
-function baseGet(object, path) {
-  path = castPath(path, object);
-
-  var index = 0,
-      length = path.length;
-
-  while (object != null && index < length) {
-    object = object[toKey(path[index++])];
-  }
-  return (index && index == length) ? object : undefined;
-}
-
-module.exports = baseGet;
-
-},{"./_castPath":133,"./_toKey":223}],90:[function(require,module,exports){
-var arrayPush = require('./_arrayPush'),
-    isArray = require('./isArray');
-
-/**
- * The base implementation of `getAllKeys` and `getAllKeysIn` which uses
- * `keysFunc` and `symbolsFunc` to get the enumerable property names and
- * symbols of `object`.
- *
- * @private
- * @param {Object} object The object to query.
- * @param {Function} keysFunc The function to get the keys of `object`.
- * @param {Function} symbolsFunc The function to get the symbols of `object`.
- * @returns {Array} Returns the array of property names and symbols.
- */
-function baseGetAllKeys(object, keysFunc, symbolsFunc) {
-  var result = keysFunc(object);
-  return isArray(object) ? result : arrayPush(result, symbolsFunc(object));
-}
-
-module.exports = baseGetAllKeys;
-
-},{"./_arrayPush":70,"./isArray":243}],91:[function(require,module,exports){
-var Symbol = require('./_Symbol'),
-    getRawTag = require('./_getRawTag'),
-    objectToString = require('./_objectToString');
-
-/** `Object#toString` result references. */
-var nullTag = '[object Null]',
-    undefinedTag = '[object Undefined]';
-
-/** Built-in value references. */
-var symToStringTag = Symbol ? Symbol.toStringTag : undefined;
-
-/**
- * The base implementation of `getTag` without fallbacks for buggy environments.
- *
- * @private
- * @param {*} value The value to query.
- * @returns {string} Returns the `toStringTag`.
- */
-function baseGetTag(value) {
-  if (value == null) {
-    return value === undefined ? undefinedTag : nullTag;
-  }
-  return (symToStringTag && symToStringTag in Object(value))
-    ? getRawTag(value)
-    : objectToString(value);
-}
-
-module.exports = baseGetTag;
-
-},{"./_Symbol":60,"./_getRawTag":165,"./_objectToString":205}],92:[function(require,module,exports){
-/**
- * The base implementation of `_.gt` which doesn't coerce arguments.
- *
- * @private
- * @param {*} value The value to compare.
- * @param {*} other The other value to compare.
- * @returns {boolean} Returns `true` if `value` is greater than `other`,
- *  else `false`.
- */
-function baseGt(value, other) {
-  return value > other;
-}
-
-module.exports = baseGt;
-
-},{}],93:[function(require,module,exports){
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * The base implementation of `_.has` without support for deep paths.
- *
- * @private
- * @param {Object} [object] The object to query.
- * @param {Array|string} key The key to check.
- * @returns {boolean} Returns `true` if `key` exists, else `false`.
- */
-function baseHas(object, key) {
-  return object != null && hasOwnProperty.call(object, key);
-}
-
-module.exports = baseHas;
-
-},{}],94:[function(require,module,exports){
-/**
- * The base implementation of `_.hasIn` without support for deep paths.
- *
- * @private
- * @param {Object} [object] The object to query.
- * @param {Array|string} key The key to check.
- * @returns {boolean} Returns `true` if `key` exists, else `false`.
- */
-function baseHasIn(object, key) {
-  return object != null && key in Object(object);
-}
-
-module.exports = baseHasIn;
-
-},{}],95:[function(require,module,exports){
-var baseFindIndex = require('./_baseFindIndex'),
-    baseIsNaN = require('./_baseIsNaN'),
-    strictIndexOf = require('./_strictIndexOf');
-
-/**
- * The base implementation of `_.indexOf` without `fromIndex` bounds checks.
- *
- * @private
- * @param {Array} array The array to inspect.
- * @param {*} value The value to search for.
- * @param {number} fromIndex The index to search from.
- * @returns {number} Returns the index of the matched value, else `-1`.
- */
-function baseIndexOf(array, value, fromIndex) {
-  return value === value
-    ? strictIndexOf(array, value, fromIndex)
-    : baseFindIndex(array, baseIsNaN, fromIndex);
-}
-
-module.exports = baseIndexOf;
-
-},{"./_baseFindIndex":85,"./_baseIsNaN":101,"./_strictIndexOf":220}],96:[function(require,module,exports){
-var baseGetTag = require('./_baseGetTag'),
-    isObjectLike = require('./isObjectLike');
-
-/** `Object#toString` result references. */
-var argsTag = '[object Arguments]';
-
-/**
- * The base implementation of `_.isArguments`.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is an `arguments` object,
- */
-function baseIsArguments(value) {
-  return isObjectLike(value) && baseGetTag(value) == argsTag;
-}
-
-module.exports = baseIsArguments;
-
-},{"./_baseGetTag":91,"./isObjectLike":252}],97:[function(require,module,exports){
-var baseIsEqualDeep = require('./_baseIsEqualDeep'),
-    isObjectLike = require('./isObjectLike');
-
-/**
- * The base implementation of `_.isEqual` which supports partial comparisons
- * and tracks traversed objects.
- *
- * @private
- * @param {*} value The value to compare.
- * @param {*} other The other value to compare.
- * @param {boolean} bitmask The bitmask flags.
- *  1 - Unordered comparison
- *  2 - Partial comparison
- * @param {Function} [customizer] The function to customize comparisons.
- * @param {Object} [stack] Tracks traversed `value` and `other` objects.
- * @returns {boolean} Returns `true` if the values are equivalent, else `false`.
- */
-function baseIsEqual(value, other, bitmask, customizer, stack) {
-  if (value === other) {
-    return true;
-  }
-  if (value == null || other == null || (!isObjectLike(value) && !isObjectLike(other))) {
-    return value !== value && other !== other;
-  }
-  return baseIsEqualDeep(value, other, bitmask, customizer, baseIsEqual, stack);
-}
-
-module.exports = baseIsEqual;
-
-},{"./_baseIsEqualDeep":98,"./isObjectLike":252}],98:[function(require,module,exports){
-var Stack = require('./_Stack'),
-    equalArrays = require('./_equalArrays'),
-    equalByTag = require('./_equalByTag'),
-    equalObjects = require('./_equalObjects'),
-    getTag = require('./_getTag'),
-    isArray = require('./isArray'),
-    isBuffer = require('./isBuffer'),
-    isTypedArray = require('./isTypedArray');
-
-/** Used to compose bitmasks for value comparisons. */
-var COMPARE_PARTIAL_FLAG = 1;
-
-/** `Object#toString` result references. */
-var argsTag = '[object Arguments]',
-    arrayTag = '[object Array]',
-    objectTag = '[object Object]';
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * A specialized version of `baseIsEqual` for arrays and objects which performs
- * deep comparisons and tracks traversed objects enabling objects with circular
- * references to be compared.
- *
- * @private
- * @param {Object} object The object to compare.
- * @param {Object} other The other object to compare.
- * @param {number} bitmask The bitmask flags. See `baseIsEqual` for more details.
- * @param {Function} customizer The function to customize comparisons.
- * @param {Function} equalFunc The function to determine equivalents of values.
- * @param {Object} [stack] Tracks traversed `object` and `other` objects.
- * @returns {boolean} Returns `true` if the objects are equivalent, else `false`.
- */
-function baseIsEqualDeep(object, other, bitmask, customizer, equalFunc, stack) {
-  var objIsArr = isArray(object),
-      othIsArr = isArray(other),
-      objTag = objIsArr ? arrayTag : getTag(object),
-      othTag = othIsArr ? arrayTag : getTag(other);
-
-  objTag = objTag == argsTag ? objectTag : objTag;
-  othTag = othTag == argsTag ? objectTag : othTag;
-
-  var objIsObj = objTag == objectTag,
-      othIsObj = othTag == objectTag,
-      isSameTag = objTag == othTag;
-
-  if (isSameTag && isBuffer(object)) {
-    if (!isBuffer(other)) {
-      return false;
-    }
-    objIsArr = true;
-    objIsObj = false;
-  }
-  if (isSameTag && !objIsObj) {
-    stack || (stack = new Stack);
-    return (objIsArr || isTypedArray(object))
-      ? equalArrays(object, other, bitmask, customizer, equalFunc, stack)
-      : equalByTag(object, other, objTag, bitmask, customizer, equalFunc, stack);
-  }
-  if (!(bitmask & COMPARE_PARTIAL_FLAG)) {
-    var objIsWrapped = objIsObj && hasOwnProperty.call(object, '__wrapped__'),
-        othIsWrapped = othIsObj && hasOwnProperty.call(other, '__wrapped__');
-
-    if (objIsWrapped || othIsWrapped) {
-      var objUnwrapped = objIsWrapped ? object.value() : object,
-          othUnwrapped = othIsWrapped ? other.value() : other;
-
-      stack || (stack = new Stack);
-      return equalFunc(objUnwrapped, othUnwrapped, bitmask, customizer, stack);
-    }
-  }
-  if (!isSameTag) {
-    return false;
-  }
-  stack || (stack = new Stack);
-  return equalObjects(object, other, bitmask, customizer, equalFunc, stack);
-}
-
-module.exports = baseIsEqualDeep;
-
-},{"./_Stack":59,"./_equalArrays":154,"./_equalByTag":155,"./_equalObjects":156,"./_getTag":168,"./isArray":243,"./isBuffer":246,"./isTypedArray":257}],99:[function(require,module,exports){
-var getTag = require('./_getTag'),
-    isObjectLike = require('./isObjectLike');
-
-/** `Object#toString` result references. */
-var mapTag = '[object Map]';
-
-/**
- * The base implementation of `_.isMap` without Node.js optimizations.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a map, else `false`.
- */
-function baseIsMap(value) {
-  return isObjectLike(value) && getTag(value) == mapTag;
-}
-
-module.exports = baseIsMap;
-
-},{"./_getTag":168,"./isObjectLike":252}],100:[function(require,module,exports){
-var Stack = require('./_Stack'),
-    baseIsEqual = require('./_baseIsEqual');
-
-/** Used to compose bitmasks for value comparisons. */
-var COMPARE_PARTIAL_FLAG = 1,
-    COMPARE_UNORDERED_FLAG = 2;
-
-/**
- * The base implementation of `_.isMatch` without support for iteratee shorthands.
- *
- * @private
- * @param {Object} object The object to inspect.
- * @param {Object} source The object of property values to match.
- * @param {Array} matchData The property names, values, and compare flags to match.
- * @param {Function} [customizer] The function to customize comparisons.
- * @returns {boolean} Returns `true` if `object` is a match, else `false`.
- */
-function baseIsMatch(object, source, matchData, customizer) {
-  var index = matchData.length,
-      length = index,
-      noCustomizer = !customizer;
-
-  if (object == null) {
-    return !length;
-  }
-  object = Object(object);
-  while (index--) {
-    var data = matchData[index];
-    if ((noCustomizer && data[2])
-          ? data[1] !== object[data[0]]
-          : !(data[0] in object)
-        ) {
-      return false;
-    }
-  }
-  while (++index < length) {
-    data = matchData[index];
-    var key = data[0],
-        objValue = object[key],
-        srcValue = data[1];
-
-    if (noCustomizer && data[2]) {
-      if (objValue === undefined && !(key in object)) {
-        return false;
-      }
-    } else {
-      var stack = new Stack;
-      if (customizer) {
-        var result = customizer(objValue, srcValue, key, object, source, stack);
-      }
-      if (!(result === undefined
-            ? baseIsEqual(srcValue, objValue, COMPARE_PARTIAL_FLAG | COMPARE_UNORDERED_FLAG, customizer, stack)
-            : result
-          )) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
-module.exports = baseIsMatch;
-
-},{"./_Stack":59,"./_baseIsEqual":97}],101:[function(require,module,exports){
-/**
- * The base implementation of `_.isNaN` without support for number objects.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is `NaN`, else `false`.
- */
-function baseIsNaN(value) {
-  return value !== value;
-}
-
-module.exports = baseIsNaN;
-
-},{}],102:[function(require,module,exports){
-var isFunction = require('./isFunction'),
-    isMasked = require('./_isMasked'),
-    isObject = require('./isObject'),
-    toSource = require('./_toSource');
-
-/**
- * Used to match `RegExp`
- * [syntax characters](http://ecma-international.org/ecma-262/7.0/#sec-patterns).
- */
-var reRegExpChar = /[\\^$.*+?()[\]{}|]/g;
-
-/** Used to detect host constructors (Safari). */
-var reIsHostCtor = /^\[object .+?Constructor\]$/;
-
-/** Used for built-in method references. */
-var funcProto = Function.prototype,
-    objectProto = Object.prototype;
-
-/** Used to resolve the decompiled source of functions. */
-var funcToString = funcProto.toString;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/** Used to detect if a method is native. */
-var reIsNative = RegExp('^' +
-  funcToString.call(hasOwnProperty).replace(reRegExpChar, '\\$&')
-  .replace(/hasOwnProperty|(function).*?(?=\\\()| for .+?(?=\\\])/g, '$1.*?') + '$'
-);
-
-/**
- * The base implementation of `_.isNative` without bad shim checks.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a native function,
- *  else `false`.
- */
-function baseIsNative(value) {
-  if (!isObject(value) || isMasked(value)) {
-    return false;
-  }
-  var pattern = isFunction(value) ? reIsNative : reIsHostCtor;
-  return pattern.test(toSource(value));
-}
-
-module.exports = baseIsNative;
-
-},{"./_isMasked":185,"./_toSource":224,"./isFunction":248,"./isObject":251}],103:[function(require,module,exports){
-var getTag = require('./_getTag'),
-    isObjectLike = require('./isObjectLike');
-
-/** `Object#toString` result references. */
-var setTag = '[object Set]';
-
-/**
- * The base implementation of `_.isSet` without Node.js optimizations.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a set, else `false`.
- */
-function baseIsSet(value) {
-  return isObjectLike(value) && getTag(value) == setTag;
-}
-
-module.exports = baseIsSet;
-
-},{"./_getTag":168,"./isObjectLike":252}],104:[function(require,module,exports){
-var baseGetTag = require('./_baseGetTag'),
-    isLength = require('./isLength'),
-    isObjectLike = require('./isObjectLike');
-
-/** `Object#toString` result references. */
-var argsTag = '[object Arguments]',
-    arrayTag = '[object Array]',
-    boolTag = '[object Boolean]',
-    dateTag = '[object Date]',
-    errorTag = '[object Error]',
-    funcTag = '[object Function]',
-    mapTag = '[object Map]',
-    numberTag = '[object Number]',
-    objectTag = '[object Object]',
-    regexpTag = '[object RegExp]',
-    setTag = '[object Set]',
-    stringTag = '[object String]',
-    weakMapTag = '[object WeakMap]';
-
-var arrayBufferTag = '[object ArrayBuffer]',
-    dataViewTag = '[object DataView]',
-    float32Tag = '[object Float32Array]',
-    float64Tag = '[object Float64Array]',
-    int8Tag = '[object Int8Array]',
-    int16Tag = '[object Int16Array]',
-    int32Tag = '[object Int32Array]',
-    uint8Tag = '[object Uint8Array]',
-    uint8ClampedTag = '[object Uint8ClampedArray]',
-    uint16Tag = '[object Uint16Array]',
-    uint32Tag = '[object Uint32Array]';
-
-/** Used to identify `toStringTag` values of typed arrays. */
-var typedArrayTags = {};
-typedArrayTags[float32Tag] = typedArrayTags[float64Tag] =
-typedArrayTags[int8Tag] = typedArrayTags[int16Tag] =
-typedArrayTags[int32Tag] = typedArrayTags[uint8Tag] =
-typedArrayTags[uint8ClampedTag] = typedArrayTags[uint16Tag] =
-typedArrayTags[uint32Tag] = true;
-typedArrayTags[argsTag] = typedArrayTags[arrayTag] =
-typedArrayTags[arrayBufferTag] = typedArrayTags[boolTag] =
-typedArrayTags[dataViewTag] = typedArrayTags[dateTag] =
-typedArrayTags[errorTag] = typedArrayTags[funcTag] =
-typedArrayTags[mapTag] = typedArrayTags[numberTag] =
-typedArrayTags[objectTag] = typedArrayTags[regexpTag] =
-typedArrayTags[setTag] = typedArrayTags[stringTag] =
-typedArrayTags[weakMapTag] = false;
-
-/**
- * The base implementation of `_.isTypedArray` without Node.js optimizations.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a typed array, else `false`.
- */
-function baseIsTypedArray(value) {
-  return isObjectLike(value) &&
-    isLength(value.length) && !!typedArrayTags[baseGetTag(value)];
-}
-
-module.exports = baseIsTypedArray;
-
-},{"./_baseGetTag":91,"./isLength":249,"./isObjectLike":252}],105:[function(require,module,exports){
-var baseMatches = require('./_baseMatches'),
-    baseMatchesProperty = require('./_baseMatchesProperty'),
-    identity = require('./identity'),
-    isArray = require('./isArray'),
-    property = require('./property');
-
-/**
- * The base implementation of `_.iteratee`.
- *
- * @private
- * @param {*} [value=_.identity] The value to convert to an iteratee.
- * @returns {Function} Returns the iteratee.
- */
-function baseIteratee(value) {
-  // Don't store the `typeof` result in a variable to avoid a JIT bug in Safari 9.
-  // See https://bugs.webkit.org/show_bug.cgi?id=156034 for more details.
-  if (typeof value == 'function') {
-    return value;
-  }
-  if (value == null) {
-    return identity;
-  }
-  if (typeof value == 'object') {
-    return isArray(value)
-      ? baseMatchesProperty(value[0], value[1])
-      : baseMatches(value);
-  }
-  return property(value);
-}
-
-module.exports = baseIteratee;
-
-},{"./_baseMatches":110,"./_baseMatchesProperty":111,"./identity":241,"./isArray":243,"./property":272}],106:[function(require,module,exports){
-var isPrototype = require('./_isPrototype'),
-    nativeKeys = require('./_nativeKeys');
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * The base implementation of `_.keys` which doesn't treat sparse arrays as dense.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {Array} Returns the array of property names.
- */
-function baseKeys(object) {
-  if (!isPrototype(object)) {
-    return nativeKeys(object);
-  }
-  var result = [];
-  for (var key in Object(object)) {
-    if (hasOwnProperty.call(object, key) && key != 'constructor') {
-      result.push(key);
-    }
-  }
-  return result;
-}
-
-module.exports = baseKeys;
-
-},{"./_isPrototype":186,"./_nativeKeys":202}],107:[function(require,module,exports){
-var isObject = require('./isObject'),
-    isPrototype = require('./_isPrototype'),
-    nativeKeysIn = require('./_nativeKeysIn');
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * The base implementation of `_.keysIn` which doesn't treat sparse arrays as dense.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {Array} Returns the array of property names.
- */
-function baseKeysIn(object) {
-  if (!isObject(object)) {
-    return nativeKeysIn(object);
-  }
-  var isProto = isPrototype(object),
-      result = [];
-
-  for (var key in object) {
-    if (!(key == 'constructor' && (isProto || !hasOwnProperty.call(object, key)))) {
-      result.push(key);
-    }
-  }
-  return result;
-}
-
-module.exports = baseKeysIn;
-
-},{"./_isPrototype":186,"./_nativeKeysIn":203,"./isObject":251}],108:[function(require,module,exports){
-/**
- * The base implementation of `_.lt` which doesn't coerce arguments.
- *
- * @private
- * @param {*} value The value to compare.
- * @param {*} other The other value to compare.
- * @returns {boolean} Returns `true` if `value` is less than `other`,
- *  else `false`.
- */
-function baseLt(value, other) {
-  return value < other;
-}
-
-module.exports = baseLt;
-
-},{}],109:[function(require,module,exports){
-var baseEach = require('./_baseEach'),
-    isArrayLike = require('./isArrayLike');
-
-/**
- * The base implementation of `_.map` without support for iteratee shorthands.
- *
- * @private
- * @param {Array|Object} collection The collection to iterate over.
- * @param {Function} iteratee The function invoked per iteration.
- * @returns {Array} Returns the new mapped array.
- */
-function baseMap(collection, iteratee) {
-  var index = -1,
-      result = isArrayLike(collection) ? Array(collection.length) : [];
-
-  baseEach(collection, function(value, key, collection) {
-    result[++index] = iteratee(value, key, collection);
-  });
-  return result;
-}
-
-module.exports = baseMap;
-
-},{"./_baseEach":82,"./isArrayLike":244}],110:[function(require,module,exports){
-var baseIsMatch = require('./_baseIsMatch'),
-    getMatchData = require('./_getMatchData'),
-    matchesStrictComparable = require('./_matchesStrictComparable');
-
-/**
- * The base implementation of `_.matches` which doesn't clone `source`.
- *
- * @private
- * @param {Object} source The object of property values to match.
- * @returns {Function} Returns the new spec function.
- */
-function baseMatches(source) {
-  var matchData = getMatchData(source);
-  if (matchData.length == 1 && matchData[0][2]) {
-    return matchesStrictComparable(matchData[0][0], matchData[0][1]);
-  }
-  return function(object) {
-    return object === source || baseIsMatch(object, source, matchData);
-  };
-}
-
-module.exports = baseMatches;
-
-},{"./_baseIsMatch":100,"./_getMatchData":162,"./_matchesStrictComparable":199}],111:[function(require,module,exports){
-var baseIsEqual = require('./_baseIsEqual'),
-    get = require('./get'),
-    hasIn = require('./hasIn'),
-    isKey = require('./_isKey'),
-    isStrictComparable = require('./_isStrictComparable'),
-    matchesStrictComparable = require('./_matchesStrictComparable'),
-    toKey = require('./_toKey');
-
-/** Used to compose bitmasks for value comparisons. */
-var COMPARE_PARTIAL_FLAG = 1,
-    COMPARE_UNORDERED_FLAG = 2;
-
-/**
- * The base implementation of `_.matchesProperty` which doesn't clone `srcValue`.
- *
- * @private
- * @param {string} path The path of the property to get.
- * @param {*} srcValue The value to match.
- * @returns {Function} Returns the new spec function.
- */
-function baseMatchesProperty(path, srcValue) {
-  if (isKey(path) && isStrictComparable(srcValue)) {
-    return matchesStrictComparable(toKey(path), srcValue);
-  }
-  return function(object) {
-    var objValue = get(object, path);
-    return (objValue === undefined && objValue === srcValue)
-      ? hasIn(object, path)
-      : baseIsEqual(srcValue, objValue, COMPARE_PARTIAL_FLAG | COMPARE_UNORDERED_FLAG);
-  };
-}
-
-module.exports = baseMatchesProperty;
-
-},{"./_baseIsEqual":97,"./_isKey":183,"./_isStrictComparable":187,"./_matchesStrictComparable":199,"./_toKey":223,"./get":238,"./hasIn":240}],112:[function(require,module,exports){
-var Stack = require('./_Stack'),
-    assignMergeValue = require('./_assignMergeValue'),
-    baseFor = require('./_baseFor'),
-    baseMergeDeep = require('./_baseMergeDeep'),
-    isObject = require('./isObject'),
-    keysIn = require('./keysIn'),
-    safeGet = require('./_safeGet');
-
-/**
- * The base implementation of `_.merge` without support for multiple sources.
- *
- * @private
- * @param {Object} object The destination object.
- * @param {Object} source The source object.
- * @param {number} srcIndex The index of `source`.
- * @param {Function} [customizer] The function to customize merged values.
- * @param {Object} [stack] Tracks traversed source values and their merged
- *  counterparts.
- */
-function baseMerge(object, source, srcIndex, customizer, stack) {
-  if (object === source) {
-    return;
-  }
-  baseFor(source, function(srcValue, key) {
-    stack || (stack = new Stack);
-    if (isObject(srcValue)) {
-      baseMergeDeep(object, source, key, srcIndex, baseMerge, customizer, stack);
-    }
-    else {
-      var newValue = customizer
-        ? customizer(safeGet(object, key), srcValue, (key + ''), object, source, stack)
-        : undefined;
-
-      if (newValue === undefined) {
-        newValue = srcValue;
-      }
-      assignMergeValue(object, key, newValue);
-    }
-  }, keysIn);
-}
-
-module.exports = baseMerge;
-
-},{"./_Stack":59,"./_assignMergeValue":74,"./_baseFor":87,"./_baseMergeDeep":113,"./_safeGet":209,"./isObject":251,"./keysIn":260}],113:[function(require,module,exports){
-var assignMergeValue = require('./_assignMergeValue'),
-    cloneBuffer = require('./_cloneBuffer'),
-    cloneTypedArray = require('./_cloneTypedArray'),
-    copyArray = require('./_copyArray'),
-    initCloneObject = require('./_initCloneObject'),
-    isArguments = require('./isArguments'),
-    isArray = require('./isArray'),
-    isArrayLikeObject = require('./isArrayLikeObject'),
-    isBuffer = require('./isBuffer'),
-    isFunction = require('./isFunction'),
-    isObject = require('./isObject'),
-    isPlainObject = require('./isPlainObject'),
-    isTypedArray = require('./isTypedArray'),
-    safeGet = require('./_safeGet'),
-    toPlainObject = require('./toPlainObject');
-
-/**
- * A specialized version of `baseMerge` for arrays and objects which performs
- * deep merges and tracks traversed objects enabling objects with circular
- * references to be merged.
- *
- * @private
- * @param {Object} object The destination object.
- * @param {Object} source The source object.
- * @param {string} key The key of the value to merge.
- * @param {number} srcIndex The index of `source`.
- * @param {Function} mergeFunc The function to merge values.
- * @param {Function} [customizer] The function to customize assigned values.
- * @param {Object} [stack] Tracks traversed source values and their merged
- *  counterparts.
- */
-function baseMergeDeep(object, source, key, srcIndex, mergeFunc, customizer, stack) {
-  var objValue = safeGet(object, key),
-      srcValue = safeGet(source, key),
-      stacked = stack.get(srcValue);
-
-  if (stacked) {
-    assignMergeValue(object, key, stacked);
-    return;
-  }
-  var newValue = customizer
-    ? customizer(objValue, srcValue, (key + ''), object, source, stack)
-    : undefined;
-
-  var isCommon = newValue === undefined;
-
-  if (isCommon) {
-    var isArr = isArray(srcValue),
-        isBuff = !isArr && isBuffer(srcValue),
-        isTyped = !isArr && !isBuff && isTypedArray(srcValue);
-
-    newValue = srcValue;
-    if (isArr || isBuff || isTyped) {
-      if (isArray(objValue)) {
-        newValue = objValue;
-      }
-      else if (isArrayLikeObject(objValue)) {
-        newValue = copyArray(objValue);
-      }
-      else if (isBuff) {
-        isCommon = false;
-        newValue = cloneBuffer(srcValue, true);
-      }
-      else if (isTyped) {
-        isCommon = false;
-        newValue = cloneTypedArray(srcValue, true);
-      }
-      else {
-        newValue = [];
-      }
-    }
-    else if (isPlainObject(srcValue) || isArguments(srcValue)) {
-      newValue = objValue;
-      if (isArguments(objValue)) {
-        newValue = toPlainObject(objValue);
-      }
-      else if (!isObject(objValue) || isFunction(objValue)) {
-        newValue = initCloneObject(srcValue);
-      }
-    }
-    else {
-      isCommon = false;
-    }
-  }
-  if (isCommon) {
-    // Recursively merge objects and arrays (susceptible to call stack limits).
-    stack.set(srcValue, newValue);
-    mergeFunc(newValue, srcValue, srcIndex, customizer, stack);
-    stack['delete'](srcValue);
-  }
-  assignMergeValue(object, key, newValue);
-}
-
-module.exports = baseMergeDeep;
-
-},{"./_assignMergeValue":74,"./_cloneBuffer":135,"./_cloneTypedArray":139,"./_copyArray":142,"./_initCloneObject":179,"./_safeGet":209,"./isArguments":242,"./isArray":243,"./isArrayLikeObject":245,"./isBuffer":246,"./isFunction":248,"./isObject":251,"./isPlainObject":253,"./isTypedArray":257,"./toPlainObject":282}],114:[function(require,module,exports){
-var arrayMap = require('./_arrayMap'),
-    baseIteratee = require('./_baseIteratee'),
-    baseMap = require('./_baseMap'),
-    baseSortBy = require('./_baseSortBy'),
-    baseUnary = require('./_baseUnary'),
-    compareMultiple = require('./_compareMultiple'),
-    identity = require('./identity');
-
-/**
- * The base implementation of `_.orderBy` without param guards.
- *
- * @private
- * @param {Array|Object} collection The collection to iterate over.
- * @param {Function[]|Object[]|string[]} iteratees The iteratees to sort by.
- * @param {string[]} orders The sort orders of `iteratees`.
- * @returns {Array} Returns the new sorted array.
- */
-function baseOrderBy(collection, iteratees, orders) {
-  var index = -1;
-  iteratees = arrayMap(iteratees.length ? iteratees : [identity], baseUnary(baseIteratee));
-
-  var result = baseMap(collection, function(value, key, collection) {
-    var criteria = arrayMap(iteratees, function(iteratee) {
-      return iteratee(value);
-    });
-    return { 'criteria': criteria, 'index': ++index, 'value': value };
-  });
-
-  return baseSortBy(result, function(object, other) {
-    return compareMultiple(object, other, orders);
-  });
-}
-
-module.exports = baseOrderBy;
-
-},{"./_arrayMap":69,"./_baseIteratee":105,"./_baseMap":109,"./_baseSortBy":124,"./_baseUnary":127,"./_compareMultiple":141,"./identity":241}],115:[function(require,module,exports){
-var basePickBy = require('./_basePickBy'),
-    hasIn = require('./hasIn');
-
-/**
- * The base implementation of `_.pick` without support for individual
- * property identifiers.
- *
- * @private
- * @param {Object} object The source object.
- * @param {string[]} paths The property paths to pick.
- * @returns {Object} Returns the new object.
- */
-function basePick(object, paths) {
-  return basePickBy(object, paths, function(value, path) {
-    return hasIn(object, path);
-  });
-}
-
-module.exports = basePick;
-
-},{"./_basePickBy":116,"./hasIn":240}],116:[function(require,module,exports){
-var baseGet = require('./_baseGet'),
-    baseSet = require('./_baseSet'),
-    castPath = require('./_castPath');
-
-/**
- * The base implementation of  `_.pickBy` without support for iteratee shorthands.
- *
- * @private
- * @param {Object} object The source object.
- * @param {string[]} paths The property paths to pick.
- * @param {Function} predicate The function invoked per property.
- * @returns {Object} Returns the new object.
- */
-function basePickBy(object, paths, predicate) {
-  var index = -1,
-      length = paths.length,
-      result = {};
-
-  while (++index < length) {
-    var path = paths[index],
-        value = baseGet(object, path);
-
-    if (predicate(value, path)) {
-      baseSet(result, castPath(path, object), value);
-    }
-  }
-  return result;
-}
-
-module.exports = basePickBy;
-
-},{"./_baseGet":89,"./_baseSet":122,"./_castPath":133}],117:[function(require,module,exports){
-/**
- * The base implementation of `_.property` without support for deep paths.
- *
- * @private
- * @param {string} key The key of the property to get.
- * @returns {Function} Returns the new accessor function.
- */
-function baseProperty(key) {
-  return function(object) {
-    return object == null ? undefined : object[key];
-  };
-}
-
-module.exports = baseProperty;
-
-},{}],118:[function(require,module,exports){
-var baseGet = require('./_baseGet');
-
-/**
- * A specialized version of `baseProperty` which supports deep paths.
- *
- * @private
- * @param {Array|string} path The path of the property to get.
- * @returns {Function} Returns the new accessor function.
- */
-function basePropertyDeep(path) {
-  return function(object) {
-    return baseGet(object, path);
-  };
-}
-
-module.exports = basePropertyDeep;
-
-},{"./_baseGet":89}],119:[function(require,module,exports){
-/* Built-in method references for those with the same name as other `lodash` methods. */
-var nativeCeil = Math.ceil,
-    nativeMax = Math.max;
-
-/**
- * The base implementation of `_.range` and `_.rangeRight` which doesn't
- * coerce arguments.
- *
- * @private
- * @param {number} start The start of the range.
- * @param {number} end The end of the range.
- * @param {number} step The value to increment or decrement by.
- * @param {boolean} [fromRight] Specify iterating from right to left.
- * @returns {Array} Returns the range of numbers.
- */
-function baseRange(start, end, step, fromRight) {
-  var index = -1,
-      length = nativeMax(nativeCeil((end - start) / (step || 1)), 0),
-      result = Array(length);
-
-  while (length--) {
-    result[fromRight ? length : ++index] = start;
-    start += step;
-  }
-  return result;
-}
-
-module.exports = baseRange;
-
-},{}],120:[function(require,module,exports){
-/**
- * The base implementation of `_.reduce` and `_.reduceRight`, without support
- * for iteratee shorthands, which iterates over `collection` using `eachFunc`.
- *
- * @private
- * @param {Array|Object} collection The collection to iterate over.
- * @param {Function} iteratee The function invoked per iteration.
- * @param {*} accumulator The initial value.
- * @param {boolean} initAccum Specify using the first or last element of
- *  `collection` as the initial value.
- * @param {Function} eachFunc The function to iterate over `collection`.
- * @returns {*} Returns the accumulated value.
- */
-function baseReduce(collection, iteratee, accumulator, initAccum, eachFunc) {
-  eachFunc(collection, function(value, index, collection) {
-    accumulator = initAccum
-      ? (initAccum = false, value)
-      : iteratee(accumulator, value, index, collection);
-  });
-  return accumulator;
-}
-
-module.exports = baseReduce;
-
-},{}],121:[function(require,module,exports){
-var identity = require('./identity'),
-    overRest = require('./_overRest'),
-    setToString = require('./_setToString');
-
-/**
- * The base implementation of `_.rest` which doesn't validate or coerce arguments.
- *
- * @private
- * @param {Function} func The function to apply a rest parameter to.
- * @param {number} [start=func.length-1] The start position of the rest parameter.
- * @returns {Function} Returns the new function.
- */
-function baseRest(func, start) {
-  return setToString(overRest(func, start, identity), func + '');
-}
-
-module.exports = baseRest;
-
-},{"./_overRest":207,"./_setToString":213,"./identity":241}],122:[function(require,module,exports){
-var assignValue = require('./_assignValue'),
-    castPath = require('./_castPath'),
-    isIndex = require('./_isIndex'),
-    isObject = require('./isObject'),
-    toKey = require('./_toKey');
-
-/**
- * The base implementation of `_.set`.
- *
- * @private
- * @param {Object} object The object to modify.
- * @param {Array|string} path The path of the property to set.
- * @param {*} value The value to set.
- * @param {Function} [customizer] The function to customize path creation.
- * @returns {Object} Returns `object`.
- */
-function baseSet(object, path, value, customizer) {
-  if (!isObject(object)) {
-    return object;
-  }
-  path = castPath(path, object);
-
-  var index = -1,
-      length = path.length,
-      lastIndex = length - 1,
-      nested = object;
-
-  while (nested != null && ++index < length) {
-    var key = toKey(path[index]),
-        newValue = value;
-
-    if (index != lastIndex) {
-      var objValue = nested[key];
-      newValue = customizer ? customizer(objValue, key, nested) : undefined;
-      if (newValue === undefined) {
-        newValue = isObject(objValue)
-          ? objValue
-          : (isIndex(path[index + 1]) ? [] : {});
-      }
-    }
-    assignValue(nested, key, newValue);
-    nested = nested[key];
-  }
-  return object;
-}
-
-module.exports = baseSet;
-
-},{"./_assignValue":75,"./_castPath":133,"./_isIndex":181,"./_toKey":223,"./isObject":251}],123:[function(require,module,exports){
-var constant = require('./constant'),
-    defineProperty = require('./_defineProperty'),
-    identity = require('./identity');
-
-/**
- * The base implementation of `setToString` without support for hot loop shorting.
- *
- * @private
- * @param {Function} func The function to modify.
- * @param {Function} string The `toString` result.
- * @returns {Function} Returns `func`.
- */
-var baseSetToString = !defineProperty ? identity : function(func, string) {
-  return defineProperty(func, 'toString', {
-    'configurable': true,
-    'enumerable': false,
-    'value': constant(string),
-    'writable': true
-  });
-};
-
-module.exports = baseSetToString;
-
-},{"./_defineProperty":153,"./constant":228,"./identity":241}],124:[function(require,module,exports){
-/**
- * The base implementation of `_.sortBy` which uses `comparer` to define the
- * sort order of `array` and replaces criteria objects with their corresponding
- * values.
- *
- * @private
- * @param {Array} array The array to sort.
- * @param {Function} comparer The function to define sort order.
- * @returns {Array} Returns `array`.
- */
-function baseSortBy(array, comparer) {
-  var length = array.length;
-
-  array.sort(comparer);
-  while (length--) {
-    array[length] = array[length].value;
-  }
-  return array;
-}
-
-module.exports = baseSortBy;
-
-},{}],125:[function(require,module,exports){
-/**
- * The base implementation of `_.times` without support for iteratee shorthands
- * or max array length checks.
- *
- * @private
- * @param {number} n The number of times to invoke `iteratee`.
- * @param {Function} iteratee The function invoked per iteration.
- * @returns {Array} Returns the array of results.
- */
-function baseTimes(n, iteratee) {
-  var index = -1,
-      result = Array(n);
-
-  while (++index < n) {
-    result[index] = iteratee(index);
-  }
-  return result;
-}
-
-module.exports = baseTimes;
-
-},{}],126:[function(require,module,exports){
-var Symbol = require('./_Symbol'),
-    arrayMap = require('./_arrayMap'),
-    isArray = require('./isArray'),
-    isSymbol = require('./isSymbol');
-
-/** Used as references for various `Number` constants. */
-var INFINITY = 1 / 0;
-
-/** Used to convert symbols to primitives and strings. */
-var symbolProto = Symbol ? Symbol.prototype : undefined,
-    symbolToString = symbolProto ? symbolProto.toString : undefined;
-
-/**
- * The base implementation of `_.toString` which doesn't convert nullish
- * values to empty strings.
- *
- * @private
- * @param {*} value The value to process.
- * @returns {string} Returns the string.
- */
-function baseToString(value) {
-  // Exit early for strings to avoid a performance hit in some environments.
-  if (typeof value == 'string') {
-    return value;
-  }
-  if (isArray(value)) {
-    // Recursively convert values (susceptible to call stack limits).
-    return arrayMap(value, baseToString) + '';
-  }
-  if (isSymbol(value)) {
-    return symbolToString ? symbolToString.call(value) : '';
-  }
-  var result = (value + '');
-  return (result == '0' && (1 / value) == -INFINITY) ? '-0' : result;
-}
-
-module.exports = baseToString;
-
-},{"./_Symbol":60,"./_arrayMap":69,"./isArray":243,"./isSymbol":256}],127:[function(require,module,exports){
-/**
- * The base implementation of `_.unary` without support for storing metadata.
- *
- * @private
- * @param {Function} func The function to cap arguments for.
- * @returns {Function} Returns the new capped function.
- */
-function baseUnary(func) {
-  return function(value) {
-    return func(value);
-  };
-}
-
-module.exports = baseUnary;
-
-},{}],128:[function(require,module,exports){
-var SetCache = require('./_SetCache'),
-    arrayIncludes = require('./_arrayIncludes'),
-    arrayIncludesWith = require('./_arrayIncludesWith'),
-    cacheHas = require('./_cacheHas'),
-    createSet = require('./_createSet'),
-    setToArray = require('./_setToArray');
-
-/** Used as the size to enable large array optimizations. */
-var LARGE_ARRAY_SIZE = 200;
-
-/**
- * The base implementation of `_.uniqBy` without support for iteratee shorthands.
- *
- * @private
- * @param {Array} array The array to inspect.
- * @param {Function} [iteratee] The iteratee invoked per element.
- * @param {Function} [comparator] The comparator invoked per element.
- * @returns {Array} Returns the new duplicate free array.
- */
-function baseUniq(array, iteratee, comparator) {
-  var index = -1,
-      includes = arrayIncludes,
-      length = array.length,
-      isCommon = true,
-      result = [],
-      seen = result;
-
-  if (comparator) {
-    isCommon = false;
-    includes = arrayIncludesWith;
-  }
-  else if (length >= LARGE_ARRAY_SIZE) {
-    var set = iteratee ? null : createSet(array);
-    if (set) {
-      return setToArray(set);
-    }
-    isCommon = false;
-    includes = cacheHas;
-    seen = new SetCache;
-  }
-  else {
-    seen = iteratee ? [] : result;
-  }
-  outer:
-  while (++index < length) {
-    var value = array[index],
-        computed = iteratee ? iteratee(value) : value;
-
-    value = (comparator || value !== 0) ? value : 0;
-    if (isCommon && computed === computed) {
-      var seenIndex = seen.length;
-      while (seenIndex--) {
-        if (seen[seenIndex] === computed) {
-          continue outer;
-        }
-      }
-      if (iteratee) {
-        seen.push(computed);
-      }
-      result.push(value);
-    }
-    else if (!includes(seen, computed, comparator)) {
-      if (seen !== result) {
-        seen.push(computed);
-      }
-      result.push(value);
-    }
-  }
-  return result;
-}
-
-module.exports = baseUniq;
-
-},{"./_SetCache":58,"./_arrayIncludes":66,"./_arrayIncludesWith":67,"./_cacheHas":131,"./_createSet":152,"./_setToArray":212}],129:[function(require,module,exports){
-var arrayMap = require('./_arrayMap');
-
-/**
- * The base implementation of `_.values` and `_.valuesIn` which creates an
- * array of `object` property values corresponding to the property names
- * of `props`.
- *
- * @private
- * @param {Object} object The object to query.
- * @param {Array} props The property names to get values for.
- * @returns {Object} Returns the array of property values.
- */
-function baseValues(object, props) {
-  return arrayMap(props, function(key) {
-    return object[key];
-  });
-}
-
-module.exports = baseValues;
-
-},{"./_arrayMap":69}],130:[function(require,module,exports){
-/**
- * This base implementation of `_.zipObject` which assigns values using `assignFunc`.
- *
- * @private
- * @param {Array} props The property identifiers.
- * @param {Array} values The property values.
- * @param {Function} assignFunc The function to assign values.
- * @returns {Object} Returns the new object.
- */
-function baseZipObject(props, values, assignFunc) {
-  var index = -1,
-      length = props.length,
-      valsLength = values.length,
-      result = {};
-
-  while (++index < length) {
-    var value = index < valsLength ? values[index] : undefined;
-    assignFunc(result, props[index], value);
-  }
-  return result;
-}
-
-module.exports = baseZipObject;
-
-},{}],131:[function(require,module,exports){
-/**
- * Checks if a `cache` value for `key` exists.
- *
- * @private
- * @param {Object} cache The cache to query.
- * @param {string} key The key of the entry to check.
- * @returns {boolean} Returns `true` if an entry for `key` exists, else `false`.
- */
-function cacheHas(cache, key) {
-  return cache.has(key);
-}
-
-module.exports = cacheHas;
-
-},{}],132:[function(require,module,exports){
-var identity = require('./identity');
-
-/**
- * Casts `value` to `identity` if it's not a function.
- *
- * @private
- * @param {*} value The value to inspect.
- * @returns {Function} Returns cast function.
- */
-function castFunction(value) {
-  return typeof value == 'function' ? value : identity;
-}
-
-module.exports = castFunction;
-
-},{"./identity":241}],133:[function(require,module,exports){
-var isArray = require('./isArray'),
-    isKey = require('./_isKey'),
-    stringToPath = require('./_stringToPath'),
-    toString = require('./toString');
-
-/**
- * Casts `value` to a path array if it's not one.
- *
- * @private
- * @param {*} value The value to inspect.
- * @param {Object} [object] The object to query keys on.
- * @returns {Array} Returns the cast property path array.
- */
-function castPath(value, object) {
-  if (isArray(value)) {
-    return value;
-  }
-  return isKey(value, object) ? [value] : stringToPath(toString(value));
-}
-
-module.exports = castPath;
-
-},{"./_isKey":183,"./_stringToPath":222,"./isArray":243,"./toString":283}],134:[function(require,module,exports){
-var Uint8Array = require('./_Uint8Array');
-
-/**
- * Creates a clone of `arrayBuffer`.
- *
- * @private
- * @param {ArrayBuffer} arrayBuffer The array buffer to clone.
- * @returns {ArrayBuffer} Returns the cloned array buffer.
- */
-function cloneArrayBuffer(arrayBuffer) {
-  var result = new arrayBuffer.constructor(arrayBuffer.byteLength);
-  new Uint8Array(result).set(new Uint8Array(arrayBuffer));
-  return result;
-}
-
-module.exports = cloneArrayBuffer;
-
-},{"./_Uint8Array":61}],135:[function(require,module,exports){
-var root = require('./_root');
-
-/** Detect free variable `exports`. */
-var freeExports = typeof exports == 'object' && exports && !exports.nodeType && exports;
-
-/** Detect free variable `module`. */
-var freeModule = freeExports && typeof module == 'object' && module && !module.nodeType && module;
-
-/** Detect the popular CommonJS extension `module.exports`. */
-var moduleExports = freeModule && freeModule.exports === freeExports;
-
-/** Built-in value references. */
-var Buffer = moduleExports ? root.Buffer : undefined,
-    allocUnsafe = Buffer ? Buffer.allocUnsafe : undefined;
-
-/**
- * Creates a clone of  `buffer`.
- *
- * @private
- * @param {Buffer} buffer The buffer to clone.
- * @param {boolean} [isDeep] Specify a deep clone.
- * @returns {Buffer} Returns the cloned buffer.
- */
-function cloneBuffer(buffer, isDeep) {
-  if (isDeep) {
-    return buffer.slice();
-  }
-  var length = buffer.length,
-      result = allocUnsafe ? allocUnsafe(length) : new buffer.constructor(length);
-
-  buffer.copy(result);
-  return result;
-}
-
-module.exports = cloneBuffer;
-
-},{"./_root":208}],136:[function(require,module,exports){
-var cloneArrayBuffer = require('./_cloneArrayBuffer');
-
-/**
- * Creates a clone of `dataView`.
- *
- * @private
- * @param {Object} dataView The data view to clone.
- * @param {boolean} [isDeep] Specify a deep clone.
- * @returns {Object} Returns the cloned data view.
- */
-function cloneDataView(dataView, isDeep) {
-  var buffer = isDeep ? cloneArrayBuffer(dataView.buffer) : dataView.buffer;
-  return new dataView.constructor(buffer, dataView.byteOffset, dataView.byteLength);
-}
-
-module.exports = cloneDataView;
-
-},{"./_cloneArrayBuffer":134}],137:[function(require,module,exports){
-/** Used to match `RegExp` flags from their coerced string values. */
-var reFlags = /\w*$/;
-
-/**
- * Creates a clone of `regexp`.
- *
- * @private
- * @param {Object} regexp The regexp to clone.
- * @returns {Object} Returns the cloned regexp.
- */
-function cloneRegExp(regexp) {
-  var result = new regexp.constructor(regexp.source, reFlags.exec(regexp));
-  result.lastIndex = regexp.lastIndex;
-  return result;
-}
-
-module.exports = cloneRegExp;
-
-},{}],138:[function(require,module,exports){
-var Symbol = require('./_Symbol');
-
-/** Used to convert symbols to primitives and strings. */
-var symbolProto = Symbol ? Symbol.prototype : undefined,
-    symbolValueOf = symbolProto ? symbolProto.valueOf : undefined;
-
-/**
- * Creates a clone of the `symbol` object.
- *
- * @private
- * @param {Object} symbol The symbol object to clone.
- * @returns {Object} Returns the cloned symbol object.
- */
-function cloneSymbol(symbol) {
-  return symbolValueOf ? Object(symbolValueOf.call(symbol)) : {};
-}
-
-module.exports = cloneSymbol;
-
-},{"./_Symbol":60}],139:[function(require,module,exports){
-var cloneArrayBuffer = require('./_cloneArrayBuffer');
-
-/**
- * Creates a clone of `typedArray`.
- *
- * @private
- * @param {Object} typedArray The typed array to clone.
- * @param {boolean} [isDeep] Specify a deep clone.
- * @returns {Object} Returns the cloned typed array.
- */
-function cloneTypedArray(typedArray, isDeep) {
-  var buffer = isDeep ? cloneArrayBuffer(typedArray.buffer) : typedArray.buffer;
-  return new typedArray.constructor(buffer, typedArray.byteOffset, typedArray.length);
-}
-
-module.exports = cloneTypedArray;
-
-},{"./_cloneArrayBuffer":134}],140:[function(require,module,exports){
-var isSymbol = require('./isSymbol');
-
-/**
- * Compares values to sort them in ascending order.
- *
- * @private
- * @param {*} value The value to compare.
- * @param {*} other The other value to compare.
- * @returns {number} Returns the sort order indicator for `value`.
- */
-function compareAscending(value, other) {
-  if (value !== other) {
-    var valIsDefined = value !== undefined,
-        valIsNull = value === null,
-        valIsReflexive = value === value,
-        valIsSymbol = isSymbol(value);
-
-    var othIsDefined = other !== undefined,
-        othIsNull = other === null,
-        othIsReflexive = other === other,
-        othIsSymbol = isSymbol(other);
-
-    if ((!othIsNull && !othIsSymbol && !valIsSymbol && value > other) ||
-        (valIsSymbol && othIsDefined && othIsReflexive && !othIsNull && !othIsSymbol) ||
-        (valIsNull && othIsDefined && othIsReflexive) ||
-        (!valIsDefined && othIsReflexive) ||
-        !valIsReflexive) {
-      return 1;
-    }
-    if ((!valIsNull && !valIsSymbol && !othIsSymbol && value < other) ||
-        (othIsSymbol && valIsDefined && valIsReflexive && !valIsNull && !valIsSymbol) ||
-        (othIsNull && valIsDefined && valIsReflexive) ||
-        (!othIsDefined && valIsReflexive) ||
-        !othIsReflexive) {
-      return -1;
-    }
-  }
-  return 0;
-}
-
-module.exports = compareAscending;
-
-},{"./isSymbol":256}],141:[function(require,module,exports){
-var compareAscending = require('./_compareAscending');
-
-/**
- * Used by `_.orderBy` to compare multiple properties of a value to another
- * and stable sort them.
- *
- * If `orders` is unspecified, all values are sorted in ascending order. Otherwise,
- * specify an order of "desc" for descending or "asc" for ascending sort order
- * of corresponding values.
- *
- * @private
- * @param {Object} object The object to compare.
- * @param {Object} other The other object to compare.
- * @param {boolean[]|string[]} orders The order to sort by for each property.
- * @returns {number} Returns the sort order indicator for `object`.
- */
-function compareMultiple(object, other, orders) {
-  var index = -1,
-      objCriteria = object.criteria,
-      othCriteria = other.criteria,
-      length = objCriteria.length,
-      ordersLength = orders.length;
-
-  while (++index < length) {
-    var result = compareAscending(objCriteria[index], othCriteria[index]);
-    if (result) {
-      if (index >= ordersLength) {
-        return result;
-      }
-      var order = orders[index];
-      return result * (order == 'desc' ? -1 : 1);
-    }
-  }
-  // Fixes an `Array#sort` bug in the JS engine embedded in Adobe applications
-  // that causes it, under certain circumstances, to provide the same value for
-  // `object` and `other`. See https://github.com/jashkenas/underscore/pull/1247
-  // for more details.
-  //
-  // This also ensures a stable sort in V8 and other engines.
-  // See https://bugs.chromium.org/p/v8/issues/detail?id=90 for more details.
-  return object.index - other.index;
-}
-
-module.exports = compareMultiple;
-
-},{"./_compareAscending":140}],142:[function(require,module,exports){
-/**
- * Copies the values of `source` to `array`.
- *
- * @private
- * @param {Array} source The array to copy values from.
- * @param {Array} [array=[]] The array to copy values to.
- * @returns {Array} Returns `array`.
- */
-function copyArray(source, array) {
-  var index = -1,
-      length = source.length;
-
-  array || (array = Array(length));
-  while (++index < length) {
-    array[index] = source[index];
-  }
-  return array;
-}
-
-module.exports = copyArray;
-
-},{}],143:[function(require,module,exports){
-var assignValue = require('./_assignValue'),
-    baseAssignValue = require('./_baseAssignValue');
-
-/**
- * Copies properties of `source` to `object`.
- *
- * @private
- * @param {Object} source The object to copy properties from.
- * @param {Array} props The property identifiers to copy.
- * @param {Object} [object={}] The object to copy properties to.
- * @param {Function} [customizer] The function to customize copied values.
- * @returns {Object} Returns `object`.
- */
-function copyObject(source, props, object, customizer) {
-  var isNew = !object;
-  object || (object = {});
-
-  var index = -1,
-      length = props.length;
-
-  while (++index < length) {
-    var key = props[index];
-
-    var newValue = customizer
-      ? customizer(object[key], source[key], key, object, source)
-      : undefined;
-
-    if (newValue === undefined) {
-      newValue = source[key];
-    }
-    if (isNew) {
-      baseAssignValue(object, key, newValue);
-    } else {
-      assignValue(object, key, newValue);
-    }
-  }
-  return object;
-}
-
-module.exports = copyObject;
-
-},{"./_assignValue":75,"./_baseAssignValue":79}],144:[function(require,module,exports){
-var copyObject = require('./_copyObject'),
-    getSymbols = require('./_getSymbols');
-
-/**
- * Copies own symbols of `source` to `object`.
- *
- * @private
- * @param {Object} source The object to copy symbols from.
- * @param {Object} [object={}] The object to copy symbols to.
- * @returns {Object} Returns `object`.
- */
-function copySymbols(source, object) {
-  return copyObject(source, getSymbols(source), object);
-}
-
-module.exports = copySymbols;
-
-},{"./_copyObject":143,"./_getSymbols":166}],145:[function(require,module,exports){
-var copyObject = require('./_copyObject'),
-    getSymbolsIn = require('./_getSymbolsIn');
-
-/**
- * Copies own and inherited symbols of `source` to `object`.
- *
- * @private
- * @param {Object} source The object to copy symbols from.
- * @param {Object} [object={}] The object to copy symbols to.
- * @returns {Object} Returns `object`.
- */
-function copySymbolsIn(source, object) {
-  return copyObject(source, getSymbolsIn(source), object);
-}
-
-module.exports = copySymbolsIn;
-
-},{"./_copyObject":143,"./_getSymbolsIn":167}],146:[function(require,module,exports){
-var root = require('./_root');
-
-/** Used to detect overreaching core-js shims. */
-var coreJsData = root['__core-js_shared__'];
-
-module.exports = coreJsData;
-
-},{"./_root":208}],147:[function(require,module,exports){
-var baseRest = require('./_baseRest'),
-    isIterateeCall = require('./_isIterateeCall');
-
-/**
- * Creates a function like `_.assign`.
- *
- * @private
- * @param {Function} assigner The function to assign values.
- * @returns {Function} Returns the new assigner function.
- */
-function createAssigner(assigner) {
-  return baseRest(function(object, sources) {
-    var index = -1,
-        length = sources.length,
-        customizer = length > 1 ? sources[length - 1] : undefined,
-        guard = length > 2 ? sources[2] : undefined;
-
-    customizer = (assigner.length > 3 && typeof customizer == 'function')
-      ? (length--, customizer)
-      : undefined;
-
-    if (guard && isIterateeCall(sources[0], sources[1], guard)) {
-      customizer = length < 3 ? undefined : customizer;
-      length = 1;
-    }
-    object = Object(object);
-    while (++index < length) {
-      var source = sources[index];
-      if (source) {
-        assigner(object, source, index, customizer);
-      }
-    }
-    return object;
-  });
-}
-
-module.exports = createAssigner;
-
-},{"./_baseRest":121,"./_isIterateeCall":182}],148:[function(require,module,exports){
-var isArrayLike = require('./isArrayLike');
-
-/**
- * Creates a `baseEach` or `baseEachRight` function.
- *
- * @private
- * @param {Function} eachFunc The function to iterate over a collection.
- * @param {boolean} [fromRight] Specify iterating from right to left.
- * @returns {Function} Returns the new base function.
- */
-function createBaseEach(eachFunc, fromRight) {
-  return function(collection, iteratee) {
-    if (collection == null) {
-      return collection;
-    }
-    if (!isArrayLike(collection)) {
-      return eachFunc(collection, iteratee);
-    }
-    var length = collection.length,
-        index = fromRight ? length : -1,
-        iterable = Object(collection);
-
-    while ((fromRight ? index-- : ++index < length)) {
-      if (iteratee(iterable[index], index, iterable) === false) {
-        break;
-      }
-    }
-    return collection;
-  };
-}
-
-module.exports = createBaseEach;
-
-},{"./isArrayLike":244}],149:[function(require,module,exports){
-/**
- * Creates a base function for methods like `_.forIn` and `_.forOwn`.
- *
- * @private
- * @param {boolean} [fromRight] Specify iterating from right to left.
- * @returns {Function} Returns the new base function.
- */
-function createBaseFor(fromRight) {
-  return function(object, iteratee, keysFunc) {
-    var index = -1,
-        iterable = Object(object),
-        props = keysFunc(object),
-        length = props.length;
-
-    while (length--) {
-      var key = props[fromRight ? length : ++index];
-      if (iteratee(iterable[key], key, iterable) === false) {
-        break;
-      }
-    }
-    return object;
-  };
-}
-
-module.exports = createBaseFor;
-
-},{}],150:[function(require,module,exports){
-var baseIteratee = require('./_baseIteratee'),
-    isArrayLike = require('./isArrayLike'),
-    keys = require('./keys');
-
-/**
- * Creates a `_.find` or `_.findLast` function.
- *
- * @private
- * @param {Function} findIndexFunc The function to find the collection index.
- * @returns {Function} Returns the new find function.
- */
-function createFind(findIndexFunc) {
-  return function(collection, predicate, fromIndex) {
-    var iterable = Object(collection);
-    if (!isArrayLike(collection)) {
-      var iteratee = baseIteratee(predicate, 3);
-      collection = keys(collection);
-      predicate = function(key) { return iteratee(iterable[key], key, iterable); };
-    }
-    var index = findIndexFunc(collection, predicate, fromIndex);
-    return index > -1 ? iterable[iteratee ? collection[index] : index] : undefined;
-  };
-}
-
-module.exports = createFind;
-
-},{"./_baseIteratee":105,"./isArrayLike":244,"./keys":259}],151:[function(require,module,exports){
-var baseRange = require('./_baseRange'),
-    isIterateeCall = require('./_isIterateeCall'),
-    toFinite = require('./toFinite');
-
-/**
- * Creates a `_.range` or `_.rangeRight` function.
- *
- * @private
- * @param {boolean} [fromRight] Specify iterating from right to left.
- * @returns {Function} Returns the new range function.
- */
-function createRange(fromRight) {
-  return function(start, end, step) {
-    if (step && typeof step != 'number' && isIterateeCall(start, end, step)) {
-      end = step = undefined;
-    }
-    // Ensure the sign of `-0` is preserved.
-    start = toFinite(start);
-    if (end === undefined) {
-      end = start;
-      start = 0;
-    } else {
-      end = toFinite(end);
-    }
-    step = step === undefined ? (start < end ? 1 : -1) : toFinite(step);
-    return baseRange(start, end, step, fromRight);
-  };
-}
-
-module.exports = createRange;
-
-},{"./_baseRange":119,"./_isIterateeCall":182,"./toFinite":279}],152:[function(require,module,exports){
-var Set = require('./_Set'),
-    noop = require('./noop'),
-    setToArray = require('./_setToArray');
-
-/** Used as references for various `Number` constants. */
-var INFINITY = 1 / 0;
-
-/**
- * Creates a set object of `values`.
- *
- * @private
- * @param {Array} values The values to add to the set.
- * @returns {Object} Returns the new set.
- */
-var createSet = !(Set && (1 / setToArray(new Set([,-0]))[1]) == INFINITY) ? noop : function(values) {
-  return new Set(values);
-};
-
-module.exports = createSet;
-
-},{"./_Set":57,"./_setToArray":212,"./noop":269}],153:[function(require,module,exports){
-var getNative = require('./_getNative');
-
-var defineProperty = (function() {
-  try {
-    var func = getNative(Object, 'defineProperty');
-    func({}, '', {});
-    return func;
-  } catch (e) {}
-}());
-
-module.exports = defineProperty;
-
-},{"./_getNative":163}],154:[function(require,module,exports){
-var SetCache = require('./_SetCache'),
-    arraySome = require('./_arraySome'),
-    cacheHas = require('./_cacheHas');
-
-/** Used to compose bitmasks for value comparisons. */
-var COMPARE_PARTIAL_FLAG = 1,
-    COMPARE_UNORDERED_FLAG = 2;
-
-/**
- * A specialized version of `baseIsEqualDeep` for arrays with support for
- * partial deep comparisons.
- *
- * @private
- * @param {Array} array The array to compare.
- * @param {Array} other The other array to compare.
- * @param {number} bitmask The bitmask flags. See `baseIsEqual` for more details.
- * @param {Function} customizer The function to customize comparisons.
- * @param {Function} equalFunc The function to determine equivalents of values.
- * @param {Object} stack Tracks traversed `array` and `other` objects.
- * @returns {boolean} Returns `true` if the arrays are equivalent, else `false`.
- */
-function equalArrays(array, other, bitmask, customizer, equalFunc, stack) {
-  var isPartial = bitmask & COMPARE_PARTIAL_FLAG,
-      arrLength = array.length,
-      othLength = other.length;
-
-  if (arrLength != othLength && !(isPartial && othLength > arrLength)) {
-    return false;
-  }
-  // Assume cyclic values are equal.
-  var stacked = stack.get(array);
-  if (stacked && stack.get(other)) {
-    return stacked == other;
-  }
-  var index = -1,
-      result = true,
-      seen = (bitmask & COMPARE_UNORDERED_FLAG) ? new SetCache : undefined;
-
-  stack.set(array, other);
-  stack.set(other, array);
-
-  // Ignore non-index properties.
-  while (++index < arrLength) {
-    var arrValue = array[index],
-        othValue = other[index];
-
-    if (customizer) {
-      var compared = isPartial
-        ? customizer(othValue, arrValue, index, other, array, stack)
-        : customizer(arrValue, othValue, index, array, other, stack);
-    }
-    if (compared !== undefined) {
-      if (compared) {
-        continue;
-      }
-      result = false;
-      break;
-    }
-    // Recursively compare arrays (susceptible to call stack limits).
-    if (seen) {
-      if (!arraySome(other, function(othValue, othIndex) {
-            if (!cacheHas(seen, othIndex) &&
-                (arrValue === othValue || equalFunc(arrValue, othValue, bitmask, customizer, stack))) {
-              return seen.push(othIndex);
-            }
-          })) {
-        result = false;
-        break;
-      }
-    } else if (!(
-          arrValue === othValue ||
-            equalFunc(arrValue, othValue, bitmask, customizer, stack)
-        )) {
-      result = false;
-      break;
-    }
-  }
-  stack['delete'](array);
-  stack['delete'](other);
-  return result;
-}
-
-module.exports = equalArrays;
-
-},{"./_SetCache":58,"./_arraySome":72,"./_cacheHas":131}],155:[function(require,module,exports){
-var Symbol = require('./_Symbol'),
-    Uint8Array = require('./_Uint8Array'),
-    eq = require('./eq'),
-    equalArrays = require('./_equalArrays'),
-    mapToArray = require('./_mapToArray'),
-    setToArray = require('./_setToArray');
-
-/** Used to compose bitmasks for value comparisons. */
-var COMPARE_PARTIAL_FLAG = 1,
-    COMPARE_UNORDERED_FLAG = 2;
-
-/** `Object#toString` result references. */
-var boolTag = '[object Boolean]',
-    dateTag = '[object Date]',
-    errorTag = '[object Error]',
-    mapTag = '[object Map]',
-    numberTag = '[object Number]',
-    regexpTag = '[object RegExp]',
-    setTag = '[object Set]',
-    stringTag = '[object String]',
-    symbolTag = '[object Symbol]';
-
-var arrayBufferTag = '[object ArrayBuffer]',
-    dataViewTag = '[object DataView]';
-
-/** Used to convert symbols to primitives and strings. */
-var symbolProto = Symbol ? Symbol.prototype : undefined,
-    symbolValueOf = symbolProto ? symbolProto.valueOf : undefined;
-
-/**
- * A specialized version of `baseIsEqualDeep` for comparing objects of
- * the same `toStringTag`.
- *
- * **Note:** This function only supports comparing values with tags of
- * `Boolean`, `Date`, `Error`, `Number`, `RegExp`, or `String`.
- *
- * @private
- * @param {Object} object The object to compare.
- * @param {Object} other The other object to compare.
- * @param {string} tag The `toStringTag` of the objects to compare.
- * @param {number} bitmask The bitmask flags. See `baseIsEqual` for more details.
- * @param {Function} customizer The function to customize comparisons.
- * @param {Function} equalFunc The function to determine equivalents of values.
- * @param {Object} stack Tracks traversed `object` and `other` objects.
- * @returns {boolean} Returns `true` if the objects are equivalent, else `false`.
- */
-function equalByTag(object, other, tag, bitmask, customizer, equalFunc, stack) {
-  switch (tag) {
-    case dataViewTag:
-      if ((object.byteLength != other.byteLength) ||
-          (object.byteOffset != other.byteOffset)) {
-        return false;
-      }
-      object = object.buffer;
-      other = other.buffer;
-
-    case arrayBufferTag:
-      if ((object.byteLength != other.byteLength) ||
-          !equalFunc(new Uint8Array(object), new Uint8Array(other))) {
-        return false;
-      }
-      return true;
-
-    case boolTag:
-    case dateTag:
-    case numberTag:
-      // Coerce booleans to `1` or `0` and dates to milliseconds.
-      // Invalid dates are coerced to `NaN`.
-      return eq(+object, +other);
-
-    case errorTag:
-      return object.name == other.name && object.message == other.message;
-
-    case regexpTag:
-    case stringTag:
-      // Coerce regexes to strings and treat strings, primitives and objects,
-      // as equal. See http://www.ecma-international.org/ecma-262/7.0/#sec-regexp.prototype.tostring
-      // for more details.
-      return object == (other + '');
-
-    case mapTag:
-      var convert = mapToArray;
-
-    case setTag:
-      var isPartial = bitmask & COMPARE_PARTIAL_FLAG;
-      convert || (convert = setToArray);
-
-      if (object.size != other.size && !isPartial) {
-        return false;
-      }
-      // Assume cyclic values are equal.
-      var stacked = stack.get(object);
-      if (stacked) {
-        return stacked == other;
-      }
-      bitmask |= COMPARE_UNORDERED_FLAG;
-
-      // Recursively compare objects (susceptible to call stack limits).
-      stack.set(object, other);
-      var result = equalArrays(convert(object), convert(other), bitmask, customizer, equalFunc, stack);
-      stack['delete'](object);
-      return result;
-
-    case symbolTag:
-      if (symbolValueOf) {
-        return symbolValueOf.call(object) == symbolValueOf.call(other);
-      }
-  }
-  return false;
-}
-
-module.exports = equalByTag;
-
-},{"./_Symbol":60,"./_Uint8Array":61,"./_equalArrays":154,"./_mapToArray":198,"./_setToArray":212,"./eq":231}],156:[function(require,module,exports){
-var getAllKeys = require('./_getAllKeys');
-
-/** Used to compose bitmasks for value comparisons. */
-var COMPARE_PARTIAL_FLAG = 1;
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * A specialized version of `baseIsEqualDeep` for objects with support for
- * partial deep comparisons.
- *
- * @private
- * @param {Object} object The object to compare.
- * @param {Object} other The other object to compare.
- * @param {number} bitmask The bitmask flags. See `baseIsEqual` for more details.
- * @param {Function} customizer The function to customize comparisons.
- * @param {Function} equalFunc The function to determine equivalents of values.
- * @param {Object} stack Tracks traversed `object` and `other` objects.
- * @returns {boolean} Returns `true` if the objects are equivalent, else `false`.
- */
-function equalObjects(object, other, bitmask, customizer, equalFunc, stack) {
-  var isPartial = bitmask & COMPARE_PARTIAL_FLAG,
-      objProps = getAllKeys(object),
-      objLength = objProps.length,
-      othProps = getAllKeys(other),
-      othLength = othProps.length;
-
-  if (objLength != othLength && !isPartial) {
-    return false;
-  }
-  var index = objLength;
-  while (index--) {
-    var key = objProps[index];
-    if (!(isPartial ? key in other : hasOwnProperty.call(other, key))) {
-      return false;
-    }
-  }
-  // Assume cyclic values are equal.
-  var stacked = stack.get(object);
-  if (stacked && stack.get(other)) {
-    return stacked == other;
-  }
-  var result = true;
-  stack.set(object, other);
-  stack.set(other, object);
-
-  var skipCtor = isPartial;
-  while (++index < objLength) {
-    key = objProps[index];
-    var objValue = object[key],
-        othValue = other[key];
-
-    if (customizer) {
-      var compared = isPartial
-        ? customizer(othValue, objValue, key, other, object, stack)
-        : customizer(objValue, othValue, key, object, other, stack);
-    }
-    // Recursively compare objects (susceptible to call stack limits).
-    if (!(compared === undefined
-          ? (objValue === othValue || equalFunc(objValue, othValue, bitmask, customizer, stack))
-          : compared
-        )) {
-      result = false;
-      break;
-    }
-    skipCtor || (skipCtor = key == 'constructor');
-  }
-  if (result && !skipCtor) {
-    var objCtor = object.constructor,
-        othCtor = other.constructor;
-
-    // Non `Object` object instances with different constructors are not equal.
-    if (objCtor != othCtor &&
-        ('constructor' in object && 'constructor' in other) &&
-        !(typeof objCtor == 'function' && objCtor instanceof objCtor &&
-          typeof othCtor == 'function' && othCtor instanceof othCtor)) {
-      result = false;
-    }
-  }
-  stack['delete'](object);
-  stack['delete'](other);
-  return result;
-}
-
-module.exports = equalObjects;
-
-},{"./_getAllKeys":159}],157:[function(require,module,exports){
-var flatten = require('./flatten'),
-    overRest = require('./_overRest'),
-    setToString = require('./_setToString');
-
-/**
- * A specialized version of `baseRest` which flattens the rest array.
- *
- * @private
- * @param {Function} func The function to apply a rest parameter to.
- * @returns {Function} Returns the new function.
- */
-function flatRest(func) {
-  return setToString(overRest(func, undefined, flatten), func + '');
-}
-
-module.exports = flatRest;
-
-},{"./_overRest":207,"./_setToString":213,"./flatten":235}],158:[function(require,module,exports){
-(function (global){
-/** Detect free variable `global` from Node.js. */
-var freeGlobal = typeof global == 'object' && global && global.Object === Object && global;
-
-module.exports = freeGlobal;
-
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],159:[function(require,module,exports){
-var baseGetAllKeys = require('./_baseGetAllKeys'),
-    getSymbols = require('./_getSymbols'),
-    keys = require('./keys');
-
-/**
- * Creates an array of own enumerable property names and symbols of `object`.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {Array} Returns the array of property names and symbols.
- */
-function getAllKeys(object) {
-  return baseGetAllKeys(object, keys, getSymbols);
-}
-
-module.exports = getAllKeys;
-
-},{"./_baseGetAllKeys":90,"./_getSymbols":166,"./keys":259}],160:[function(require,module,exports){
-var baseGetAllKeys = require('./_baseGetAllKeys'),
-    getSymbolsIn = require('./_getSymbolsIn'),
-    keysIn = require('./keysIn');
-
-/**
- * Creates an array of own and inherited enumerable property names and
- * symbols of `object`.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {Array} Returns the array of property names and symbols.
- */
-function getAllKeysIn(object) {
-  return baseGetAllKeys(object, keysIn, getSymbolsIn);
-}
-
-module.exports = getAllKeysIn;
-
-},{"./_baseGetAllKeys":90,"./_getSymbolsIn":167,"./keysIn":260}],161:[function(require,module,exports){
-var isKeyable = require('./_isKeyable');
-
-/**
- * Gets the data for `map`.
- *
- * @private
- * @param {Object} map The map to query.
- * @param {string} key The reference key.
- * @returns {*} Returns the map data.
- */
-function getMapData(map, key) {
-  var data = map.__data__;
-  return isKeyable(key)
-    ? data[typeof key == 'string' ? 'string' : 'hash']
-    : data.map;
-}
-
-module.exports = getMapData;
-
-},{"./_isKeyable":184}],162:[function(require,module,exports){
-var isStrictComparable = require('./_isStrictComparable'),
-    keys = require('./keys');
-
-/**
- * Gets the property names, values, and compare flags of `object`.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {Array} Returns the match data of `object`.
- */
-function getMatchData(object) {
-  var result = keys(object),
-      length = result.length;
-
-  while (length--) {
-    var key = result[length],
-        value = object[key];
-
-    result[length] = [key, value, isStrictComparable(value)];
-  }
-  return result;
-}
-
-module.exports = getMatchData;
-
-},{"./_isStrictComparable":187,"./keys":259}],163:[function(require,module,exports){
-var baseIsNative = require('./_baseIsNative'),
-    getValue = require('./_getValue');
-
-/**
- * Gets the native function at `key` of `object`.
- *
- * @private
- * @param {Object} object The object to query.
- * @param {string} key The key of the method to get.
- * @returns {*} Returns the function if it's native, else `undefined`.
- */
-function getNative(object, key) {
-  var value = getValue(object, key);
-  return baseIsNative(value) ? value : undefined;
-}
-
-module.exports = getNative;
-
-},{"./_baseIsNative":102,"./_getValue":169}],164:[function(require,module,exports){
-var overArg = require('./_overArg');
-
-/** Built-in value references. */
-var getPrototype = overArg(Object.getPrototypeOf, Object);
-
-module.exports = getPrototype;
-
-},{"./_overArg":206}],165:[function(require,module,exports){
-var Symbol = require('./_Symbol');
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Used to resolve the
- * [`toStringTag`](http://ecma-international.org/ecma-262/7.0/#sec-object.prototype.tostring)
- * of values.
- */
-var nativeObjectToString = objectProto.toString;
-
-/** Built-in value references. */
-var symToStringTag = Symbol ? Symbol.toStringTag : undefined;
-
-/**
- * A specialized version of `baseGetTag` which ignores `Symbol.toStringTag` values.
- *
- * @private
- * @param {*} value The value to query.
- * @returns {string} Returns the raw `toStringTag`.
- */
-function getRawTag(value) {
-  var isOwn = hasOwnProperty.call(value, symToStringTag),
-      tag = value[symToStringTag];
-
-  try {
-    value[symToStringTag] = undefined;
-    var unmasked = true;
-  } catch (e) {}
-
-  var result = nativeObjectToString.call(value);
-  if (unmasked) {
-    if (isOwn) {
-      value[symToStringTag] = tag;
-    } else {
-      delete value[symToStringTag];
-    }
-  }
-  return result;
-}
-
-module.exports = getRawTag;
-
-},{"./_Symbol":60}],166:[function(require,module,exports){
-var arrayFilter = require('./_arrayFilter'),
-    stubArray = require('./stubArray');
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Built-in value references. */
-var propertyIsEnumerable = objectProto.propertyIsEnumerable;
-
-/* Built-in method references for those with the same name as other `lodash` methods. */
-var nativeGetSymbols = Object.getOwnPropertySymbols;
-
-/**
- * Creates an array of the own enumerable symbols of `object`.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {Array} Returns the array of symbols.
- */
-var getSymbols = !nativeGetSymbols ? stubArray : function(object) {
-  if (object == null) {
-    return [];
-  }
-  object = Object(object);
-  return arrayFilter(nativeGetSymbols(object), function(symbol) {
-    return propertyIsEnumerable.call(object, symbol);
-  });
-};
-
-module.exports = getSymbols;
-
-},{"./_arrayFilter":65,"./stubArray":277}],167:[function(require,module,exports){
-var arrayPush = require('./_arrayPush'),
-    getPrototype = require('./_getPrototype'),
-    getSymbols = require('./_getSymbols'),
-    stubArray = require('./stubArray');
-
-/* Built-in method references for those with the same name as other `lodash` methods. */
-var nativeGetSymbols = Object.getOwnPropertySymbols;
-
-/**
- * Creates an array of the own and inherited enumerable symbols of `object`.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {Array} Returns the array of symbols.
- */
-var getSymbolsIn = !nativeGetSymbols ? stubArray : function(object) {
-  var result = [];
-  while (object) {
-    arrayPush(result, getSymbols(object));
-    object = getPrototype(object);
-  }
-  return result;
-};
-
-module.exports = getSymbolsIn;
-
-},{"./_arrayPush":70,"./_getPrototype":164,"./_getSymbols":166,"./stubArray":277}],168:[function(require,module,exports){
-var DataView = require('./_DataView'),
-    Map = require('./_Map'),
-    Promise = require('./_Promise'),
-    Set = require('./_Set'),
-    WeakMap = require('./_WeakMap'),
-    baseGetTag = require('./_baseGetTag'),
-    toSource = require('./_toSource');
-
-/** `Object#toString` result references. */
-var mapTag = '[object Map]',
-    objectTag = '[object Object]',
-    promiseTag = '[object Promise]',
-    setTag = '[object Set]',
-    weakMapTag = '[object WeakMap]';
-
-var dataViewTag = '[object DataView]';
-
-/** Used to detect maps, sets, and weakmaps. */
-var dataViewCtorString = toSource(DataView),
-    mapCtorString = toSource(Map),
-    promiseCtorString = toSource(Promise),
-    setCtorString = toSource(Set),
-    weakMapCtorString = toSource(WeakMap);
-
-/**
- * Gets the `toStringTag` of `value`.
- *
- * @private
- * @param {*} value The value to query.
- * @returns {string} Returns the `toStringTag`.
- */
-var getTag = baseGetTag;
-
-// Fallback for data views, maps, sets, and weak maps in IE 11 and promises in Node.js < 6.
-if ((DataView && getTag(new DataView(new ArrayBuffer(1))) != dataViewTag) ||
-    (Map && getTag(new Map) != mapTag) ||
-    (Promise && getTag(Promise.resolve()) != promiseTag) ||
-    (Set && getTag(new Set) != setTag) ||
-    (WeakMap && getTag(new WeakMap) != weakMapTag)) {
-  getTag = function(value) {
-    var result = baseGetTag(value),
-        Ctor = result == objectTag ? value.constructor : undefined,
-        ctorString = Ctor ? toSource(Ctor) : '';
-
-    if (ctorString) {
-      switch (ctorString) {
-        case dataViewCtorString: return dataViewTag;
-        case mapCtorString: return mapTag;
-        case promiseCtorString: return promiseTag;
-        case setCtorString: return setTag;
-        case weakMapCtorString: return weakMapTag;
-      }
-    }
-    return result;
-  };
-}
-
-module.exports = getTag;
-
-},{"./_DataView":51,"./_Map":54,"./_Promise":56,"./_Set":57,"./_WeakMap":62,"./_baseGetTag":91,"./_toSource":224}],169:[function(require,module,exports){
-/**
- * Gets the value at `key` of `object`.
- *
- * @private
- * @param {Object} [object] The object to query.
- * @param {string} key The key of the property to get.
- * @returns {*} Returns the property value.
- */
-function getValue(object, key) {
-  return object == null ? undefined : object[key];
-}
-
-module.exports = getValue;
-
-},{}],170:[function(require,module,exports){
-var castPath = require('./_castPath'),
-    isArguments = require('./isArguments'),
-    isArray = require('./isArray'),
-    isIndex = require('./_isIndex'),
-    isLength = require('./isLength'),
-    toKey = require('./_toKey');
-
-/**
- * Checks if `path` exists on `object`.
- *
- * @private
- * @param {Object} object The object to query.
- * @param {Array|string} path The path to check.
- * @param {Function} hasFunc The function to check properties.
- * @returns {boolean} Returns `true` if `path` exists, else `false`.
- */
-function hasPath(object, path, hasFunc) {
-  path = castPath(path, object);
-
-  var index = -1,
-      length = path.length,
-      result = false;
-
-  while (++index < length) {
-    var key = toKey(path[index]);
-    if (!(result = object != null && hasFunc(object, key))) {
-      break;
-    }
-    object = object[key];
-  }
-  if (result || ++index != length) {
-    return result;
-  }
-  length = object == null ? 0 : object.length;
-  return !!length && isLength(length) && isIndex(key, length) &&
-    (isArray(object) || isArguments(object));
-}
-
-module.exports = hasPath;
-
-},{"./_castPath":133,"./_isIndex":181,"./_toKey":223,"./isArguments":242,"./isArray":243,"./isLength":249}],171:[function(require,module,exports){
-/** Used to compose unicode character classes. */
-var rsAstralRange = '\\ud800-\\udfff',
-    rsComboMarksRange = '\\u0300-\\u036f',
-    reComboHalfMarksRange = '\\ufe20-\\ufe2f',
-    rsComboSymbolsRange = '\\u20d0-\\u20ff',
-    rsComboRange = rsComboMarksRange + reComboHalfMarksRange + rsComboSymbolsRange,
-    rsVarRange = '\\ufe0e\\ufe0f';
-
-/** Used to compose unicode capture groups. */
-var rsZWJ = '\\u200d';
-
-/** Used to detect strings with [zero-width joiners or code points from the astral planes](http://eev.ee/blog/2015/09/12/dark-corners-of-unicode/). */
-var reHasUnicode = RegExp('[' + rsZWJ + rsAstralRange  + rsComboRange + rsVarRange + ']');
-
-/**
- * Checks if `string` contains Unicode symbols.
- *
- * @private
- * @param {string} string The string to inspect.
- * @returns {boolean} Returns `true` if a symbol is found, else `false`.
- */
-function hasUnicode(string) {
-  return reHasUnicode.test(string);
-}
-
-module.exports = hasUnicode;
-
-},{}],172:[function(require,module,exports){
-var nativeCreate = require('./_nativeCreate');
-
-/**
- * Removes all key-value entries from the hash.
- *
- * @private
- * @name clear
- * @memberOf Hash
- */
-function hashClear() {
-  this.__data__ = nativeCreate ? nativeCreate(null) : {};
-  this.size = 0;
-}
-
-module.exports = hashClear;
-
-},{"./_nativeCreate":201}],173:[function(require,module,exports){
-/**
- * Removes `key` and its value from the hash.
- *
- * @private
- * @name delete
- * @memberOf Hash
- * @param {Object} hash The hash to modify.
- * @param {string} key The key of the value to remove.
- * @returns {boolean} Returns `true` if the entry was removed, else `false`.
- */
-function hashDelete(key) {
-  var result = this.has(key) && delete this.__data__[key];
-  this.size -= result ? 1 : 0;
-  return result;
-}
-
-module.exports = hashDelete;
-
-},{}],174:[function(require,module,exports){
-var nativeCreate = require('./_nativeCreate');
-
-/** Used to stand-in for `undefined` hash values. */
-var HASH_UNDEFINED = '__lodash_hash_undefined__';
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Gets the hash value for `key`.
- *
- * @private
- * @name get
- * @memberOf Hash
- * @param {string} key The key of the value to get.
- * @returns {*} Returns the entry value.
- */
-function hashGet(key) {
-  var data = this.__data__;
-  if (nativeCreate) {
-    var result = data[key];
-    return result === HASH_UNDEFINED ? undefined : result;
-  }
-  return hasOwnProperty.call(data, key) ? data[key] : undefined;
-}
-
-module.exports = hashGet;
-
-},{"./_nativeCreate":201}],175:[function(require,module,exports){
-var nativeCreate = require('./_nativeCreate');
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Checks if a hash value for `key` exists.
- *
- * @private
- * @name has
- * @memberOf Hash
- * @param {string} key The key of the entry to check.
- * @returns {boolean} Returns `true` if an entry for `key` exists, else `false`.
- */
-function hashHas(key) {
-  var data = this.__data__;
-  return nativeCreate ? (data[key] !== undefined) : hasOwnProperty.call(data, key);
-}
-
-module.exports = hashHas;
-
-},{"./_nativeCreate":201}],176:[function(require,module,exports){
-var nativeCreate = require('./_nativeCreate');
-
-/** Used to stand-in for `undefined` hash values. */
-var HASH_UNDEFINED = '__lodash_hash_undefined__';
-
-/**
- * Sets the hash `key` to `value`.
- *
- * @private
- * @name set
- * @memberOf Hash
- * @param {string} key The key of the value to set.
- * @param {*} value The value to set.
- * @returns {Object} Returns the hash instance.
- */
-function hashSet(key, value) {
-  var data = this.__data__;
-  this.size += this.has(key) ? 0 : 1;
-  data[key] = (nativeCreate && value === undefined) ? HASH_UNDEFINED : value;
-  return this;
-}
-
-module.exports = hashSet;
-
-},{"./_nativeCreate":201}],177:[function(require,module,exports){
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Initializes an array clone.
- *
- * @private
- * @param {Array} array The array to clone.
- * @returns {Array} Returns the initialized clone.
- */
-function initCloneArray(array) {
-  var length = array.length,
-      result = new array.constructor(length);
-
-  // Add properties assigned by `RegExp#exec`.
-  if (length && typeof array[0] == 'string' && hasOwnProperty.call(array, 'index')) {
-    result.index = array.index;
-    result.input = array.input;
-  }
-  return result;
-}
-
-module.exports = initCloneArray;
-
-},{}],178:[function(require,module,exports){
-var cloneArrayBuffer = require('./_cloneArrayBuffer'),
-    cloneDataView = require('./_cloneDataView'),
-    cloneRegExp = require('./_cloneRegExp'),
-    cloneSymbol = require('./_cloneSymbol'),
-    cloneTypedArray = require('./_cloneTypedArray');
-
-/** `Object#toString` result references. */
-var boolTag = '[object Boolean]',
-    dateTag = '[object Date]',
-    mapTag = '[object Map]',
-    numberTag = '[object Number]',
-    regexpTag = '[object RegExp]',
-    setTag = '[object Set]',
-    stringTag = '[object String]',
-    symbolTag = '[object Symbol]';
-
-var arrayBufferTag = '[object ArrayBuffer]',
-    dataViewTag = '[object DataView]',
-    float32Tag = '[object Float32Array]',
-    float64Tag = '[object Float64Array]',
-    int8Tag = '[object Int8Array]',
-    int16Tag = '[object Int16Array]',
-    int32Tag = '[object Int32Array]',
-    uint8Tag = '[object Uint8Array]',
-    uint8ClampedTag = '[object Uint8ClampedArray]',
-    uint16Tag = '[object Uint16Array]',
-    uint32Tag = '[object Uint32Array]';
-
-/**
- * Initializes an object clone based on its `toStringTag`.
- *
- * **Note:** This function only supports cloning values with tags of
- * `Boolean`, `Date`, `Error`, `Map`, `Number`, `RegExp`, `Set`, or `String`.
- *
- * @private
- * @param {Object} object The object to clone.
- * @param {string} tag The `toStringTag` of the object to clone.
- * @param {boolean} [isDeep] Specify a deep clone.
- * @returns {Object} Returns the initialized clone.
- */
-function initCloneByTag(object, tag, isDeep) {
-  var Ctor = object.constructor;
-  switch (tag) {
-    case arrayBufferTag:
-      return cloneArrayBuffer(object);
-
-    case boolTag:
-    case dateTag:
-      return new Ctor(+object);
-
-    case dataViewTag:
-      return cloneDataView(object, isDeep);
-
-    case float32Tag: case float64Tag:
-    case int8Tag: case int16Tag: case int32Tag:
-    case uint8Tag: case uint8ClampedTag: case uint16Tag: case uint32Tag:
-      return cloneTypedArray(object, isDeep);
-
-    case mapTag:
-      return new Ctor;
-
-    case numberTag:
-    case stringTag:
-      return new Ctor(object);
-
-    case regexpTag:
-      return cloneRegExp(object);
-
-    case setTag:
-      return new Ctor;
-
-    case symbolTag:
-      return cloneSymbol(object);
-  }
-}
-
-module.exports = initCloneByTag;
-
-},{"./_cloneArrayBuffer":134,"./_cloneDataView":136,"./_cloneRegExp":137,"./_cloneSymbol":138,"./_cloneTypedArray":139}],179:[function(require,module,exports){
-var baseCreate = require('./_baseCreate'),
-    getPrototype = require('./_getPrototype'),
-    isPrototype = require('./_isPrototype');
-
-/**
- * Initializes an object clone.
- *
- * @private
- * @param {Object} object The object to clone.
- * @returns {Object} Returns the initialized clone.
- */
-function initCloneObject(object) {
-  return (typeof object.constructor == 'function' && !isPrototype(object))
-    ? baseCreate(getPrototype(object))
-    : {};
-}
-
-module.exports = initCloneObject;
-
-},{"./_baseCreate":81,"./_getPrototype":164,"./_isPrototype":186}],180:[function(require,module,exports){
-var Symbol = require('./_Symbol'),
-    isArguments = require('./isArguments'),
-    isArray = require('./isArray');
-
-/** Built-in value references. */
-var spreadableSymbol = Symbol ? Symbol.isConcatSpreadable : undefined;
-
-/**
- * Checks if `value` is a flattenable `arguments` object or array.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is flattenable, else `false`.
- */
-function isFlattenable(value) {
-  return isArray(value) || isArguments(value) ||
-    !!(spreadableSymbol && value && value[spreadableSymbol]);
-}
-
-module.exports = isFlattenable;
-
-},{"./_Symbol":60,"./isArguments":242,"./isArray":243}],181:[function(require,module,exports){
-/** Used as references for various `Number` constants. */
-var MAX_SAFE_INTEGER = 9007199254740991;
-
-/** Used to detect unsigned integer values. */
-var reIsUint = /^(?:0|[1-9]\d*)$/;
-
-/**
- * Checks if `value` is a valid array-like index.
- *
- * @private
- * @param {*} value The value to check.
- * @param {number} [length=MAX_SAFE_INTEGER] The upper bounds of a valid index.
- * @returns {boolean} Returns `true` if `value` is a valid index, else `false`.
- */
-function isIndex(value, length) {
-  var type = typeof value;
-  length = length == null ? MAX_SAFE_INTEGER : length;
-
-  return !!length &&
-    (type == 'number' ||
-      (type != 'symbol' && reIsUint.test(value))) &&
-        (value > -1 && value % 1 == 0 && value < length);
-}
-
-module.exports = isIndex;
-
-},{}],182:[function(require,module,exports){
-var eq = require('./eq'),
-    isArrayLike = require('./isArrayLike'),
-    isIndex = require('./_isIndex'),
-    isObject = require('./isObject');
-
-/**
- * Checks if the given arguments are from an iteratee call.
- *
- * @private
- * @param {*} value The potential iteratee value argument.
- * @param {*} index The potential iteratee index or key argument.
- * @param {*} object The potential iteratee object argument.
- * @returns {boolean} Returns `true` if the arguments are from an iteratee call,
- *  else `false`.
- */
-function isIterateeCall(value, index, object) {
-  if (!isObject(object)) {
-    return false;
-  }
-  var type = typeof index;
-  if (type == 'number'
-        ? (isArrayLike(object) && isIndex(index, object.length))
-        : (type == 'string' && index in object)
-      ) {
-    return eq(object[index], value);
-  }
-  return false;
-}
-
-module.exports = isIterateeCall;
-
-},{"./_isIndex":181,"./eq":231,"./isArrayLike":244,"./isObject":251}],183:[function(require,module,exports){
-var isArray = require('./isArray'),
-    isSymbol = require('./isSymbol');
-
-/** Used to match property names within property paths. */
-var reIsDeepProp = /\.|\[(?:[^[\]]*|(["'])(?:(?!\1)[^\\]|\\.)*?\1)\]/,
-    reIsPlainProp = /^\w*$/;
-
-/**
- * Checks if `value` is a property name and not a property path.
- *
- * @private
- * @param {*} value The value to check.
- * @param {Object} [object] The object to query keys on.
- * @returns {boolean} Returns `true` if `value` is a property name, else `false`.
- */
-function isKey(value, object) {
-  if (isArray(value)) {
-    return false;
-  }
-  var type = typeof value;
-  if (type == 'number' || type == 'symbol' || type == 'boolean' ||
-      value == null || isSymbol(value)) {
-    return true;
-  }
-  return reIsPlainProp.test(value) || !reIsDeepProp.test(value) ||
-    (object != null && value in Object(object));
-}
-
-module.exports = isKey;
-
-},{"./isArray":243,"./isSymbol":256}],184:[function(require,module,exports){
-/**
- * Checks if `value` is suitable for use as unique object key.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is suitable, else `false`.
- */
-function isKeyable(value) {
-  var type = typeof value;
-  return (type == 'string' || type == 'number' || type == 'symbol' || type == 'boolean')
-    ? (value !== '__proto__')
-    : (value === null);
-}
-
-module.exports = isKeyable;
-
-},{}],185:[function(require,module,exports){
-var coreJsData = require('./_coreJsData');
-
-/** Used to detect methods masquerading as native. */
-var maskSrcKey = (function() {
-  var uid = /[^.]+$/.exec(coreJsData && coreJsData.keys && coreJsData.keys.IE_PROTO || '');
-  return uid ? ('Symbol(src)_1.' + uid) : '';
-}());
-
-/**
- * Checks if `func` has its source masked.
- *
- * @private
- * @param {Function} func The function to check.
- * @returns {boolean} Returns `true` if `func` is masked, else `false`.
- */
-function isMasked(func) {
-  return !!maskSrcKey && (maskSrcKey in func);
-}
-
-module.exports = isMasked;
-
-},{"./_coreJsData":146}],186:[function(require,module,exports){
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/**
- * Checks if `value` is likely a prototype object.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a prototype, else `false`.
- */
-function isPrototype(value) {
-  var Ctor = value && value.constructor,
-      proto = (typeof Ctor == 'function' && Ctor.prototype) || objectProto;
-
-  return value === proto;
-}
-
-module.exports = isPrototype;
-
-},{}],187:[function(require,module,exports){
-var isObject = require('./isObject');
-
-/**
- * Checks if `value` is suitable for strict equality comparisons, i.e. `===`.
- *
- * @private
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` if suitable for strict
- *  equality comparisons, else `false`.
- */
-function isStrictComparable(value) {
-  return value === value && !isObject(value);
-}
-
-module.exports = isStrictComparable;
-
-},{"./isObject":251}],188:[function(require,module,exports){
-/**
- * Removes all key-value entries from the list cache.
- *
- * @private
- * @name clear
- * @memberOf ListCache
- */
-function listCacheClear() {
-  this.__data__ = [];
-  this.size = 0;
-}
-
-module.exports = listCacheClear;
-
-},{}],189:[function(require,module,exports){
-var assocIndexOf = require('./_assocIndexOf');
-
-/** Used for built-in method references. */
-var arrayProto = Array.prototype;
-
-/** Built-in value references. */
-var splice = arrayProto.splice;
-
-/**
- * Removes `key` and its value from the list cache.
- *
- * @private
- * @name delete
- * @memberOf ListCache
- * @param {string} key The key of the value to remove.
- * @returns {boolean} Returns `true` if the entry was removed, else `false`.
- */
-function listCacheDelete(key) {
-  var data = this.__data__,
-      index = assocIndexOf(data, key);
-
-  if (index < 0) {
-    return false;
-  }
-  var lastIndex = data.length - 1;
-  if (index == lastIndex) {
-    data.pop();
-  } else {
-    splice.call(data, index, 1);
-  }
-  --this.size;
-  return true;
-}
-
-module.exports = listCacheDelete;
-
-},{"./_assocIndexOf":76}],190:[function(require,module,exports){
-var assocIndexOf = require('./_assocIndexOf');
-
-/**
- * Gets the list cache value for `key`.
- *
- * @private
- * @name get
- * @memberOf ListCache
- * @param {string} key The key of the value to get.
- * @returns {*} Returns the entry value.
- */
-function listCacheGet(key) {
-  var data = this.__data__,
-      index = assocIndexOf(data, key);
-
-  return index < 0 ? undefined : data[index][1];
-}
-
-module.exports = listCacheGet;
-
-},{"./_assocIndexOf":76}],191:[function(require,module,exports){
-var assocIndexOf = require('./_assocIndexOf');
-
-/**
- * Checks if a list cache value for `key` exists.
- *
- * @private
- * @name has
- * @memberOf ListCache
- * @param {string} key The key of the entry to check.
- * @returns {boolean} Returns `true` if an entry for `key` exists, else `false`.
- */
-function listCacheHas(key) {
-  return assocIndexOf(this.__data__, key) > -1;
-}
-
-module.exports = listCacheHas;
-
-},{"./_assocIndexOf":76}],192:[function(require,module,exports){
-var assocIndexOf = require('./_assocIndexOf');
-
-/**
- * Sets the list cache `key` to `value`.
- *
- * @private
- * @name set
- * @memberOf ListCache
- * @param {string} key The key of the value to set.
- * @param {*} value The value to set.
- * @returns {Object} Returns the list cache instance.
- */
-function listCacheSet(key, value) {
-  var data = this.__data__,
-      index = assocIndexOf(data, key);
-
-  if (index < 0) {
-    ++this.size;
-    data.push([key, value]);
-  } else {
-    data[index][1] = value;
-  }
-  return this;
-}
-
-module.exports = listCacheSet;
-
-},{"./_assocIndexOf":76}],193:[function(require,module,exports){
-var Hash = require('./_Hash'),
-    ListCache = require('./_ListCache'),
-    Map = require('./_Map');
-
-/**
- * Removes all key-value entries from the map.
- *
- * @private
- * @name clear
- * @memberOf MapCache
- */
-function mapCacheClear() {
-  this.size = 0;
-  this.__data__ = {
-    'hash': new Hash,
-    'map': new (Map || ListCache),
-    'string': new Hash
-  };
-}
-
-module.exports = mapCacheClear;
-
-},{"./_Hash":52,"./_ListCache":53,"./_Map":54}],194:[function(require,module,exports){
-var getMapData = require('./_getMapData');
-
-/**
- * Removes `key` and its value from the map.
- *
- * @private
- * @name delete
- * @memberOf MapCache
- * @param {string} key The key of the value to remove.
- * @returns {boolean} Returns `true` if the entry was removed, else `false`.
- */
-function mapCacheDelete(key) {
-  var result = getMapData(this, key)['delete'](key);
-  this.size -= result ? 1 : 0;
-  return result;
-}
-
-module.exports = mapCacheDelete;
-
-},{"./_getMapData":161}],195:[function(require,module,exports){
-var getMapData = require('./_getMapData');
-
-/**
- * Gets the map value for `key`.
- *
- * @private
- * @name get
- * @memberOf MapCache
- * @param {string} key The key of the value to get.
- * @returns {*} Returns the entry value.
- */
-function mapCacheGet(key) {
-  return getMapData(this, key).get(key);
-}
-
-module.exports = mapCacheGet;
-
-},{"./_getMapData":161}],196:[function(require,module,exports){
-var getMapData = require('./_getMapData');
-
-/**
- * Checks if a map value for `key` exists.
- *
- * @private
- * @name has
- * @memberOf MapCache
- * @param {string} key The key of the entry to check.
- * @returns {boolean} Returns `true` if an entry for `key` exists, else `false`.
- */
-function mapCacheHas(key) {
-  return getMapData(this, key).has(key);
-}
-
-module.exports = mapCacheHas;
-
-},{"./_getMapData":161}],197:[function(require,module,exports){
-var getMapData = require('./_getMapData');
-
-/**
- * Sets the map `key` to `value`.
- *
- * @private
- * @name set
- * @memberOf MapCache
- * @param {string} key The key of the value to set.
- * @param {*} value The value to set.
- * @returns {Object} Returns the map cache instance.
- */
-function mapCacheSet(key, value) {
-  var data = getMapData(this, key),
-      size = data.size;
-
-  data.set(key, value);
-  this.size += data.size == size ? 0 : 1;
-  return this;
-}
-
-module.exports = mapCacheSet;
-
-},{"./_getMapData":161}],198:[function(require,module,exports){
-/**
- * Converts `map` to its key-value pairs.
- *
- * @private
- * @param {Object} map The map to convert.
- * @returns {Array} Returns the key-value pairs.
- */
-function mapToArray(map) {
-  var index = -1,
-      result = Array(map.size);
-
-  map.forEach(function(value, key) {
-    result[++index] = [key, value];
-  });
-  return result;
-}
-
-module.exports = mapToArray;
-
-},{}],199:[function(require,module,exports){
-/**
- * A specialized version of `matchesProperty` for source values suitable
- * for strict equality comparisons, i.e. `===`.
- *
- * @private
- * @param {string} key The key of the property to get.
- * @param {*} srcValue The value to match.
- * @returns {Function} Returns the new spec function.
- */
-function matchesStrictComparable(key, srcValue) {
-  return function(object) {
-    if (object == null) {
-      return false;
-    }
-    return object[key] === srcValue &&
-      (srcValue !== undefined || (key in Object(object)));
-  };
-}
-
-module.exports = matchesStrictComparable;
-
-},{}],200:[function(require,module,exports){
-var memoize = require('./memoize');
-
-/** Used as the maximum memoize cache size. */
-var MAX_MEMOIZE_SIZE = 500;
-
-/**
- * A specialized version of `_.memoize` which clears the memoized function's
- * cache when it exceeds `MAX_MEMOIZE_SIZE`.
- *
- * @private
- * @param {Function} func The function to have its output memoized.
- * @returns {Function} Returns the new memoized function.
- */
-function memoizeCapped(func) {
-  var result = memoize(func, function(key) {
-    if (cache.size === MAX_MEMOIZE_SIZE) {
-      cache.clear();
-    }
-    return key;
-  });
-
-  var cache = result.cache;
-  return result;
-}
-
-module.exports = memoizeCapped;
-
-},{"./memoize":265}],201:[function(require,module,exports){
-var getNative = require('./_getNative');
-
-/* Built-in method references that are verified to be native. */
-var nativeCreate = getNative(Object, 'create');
-
-module.exports = nativeCreate;
-
-},{"./_getNative":163}],202:[function(require,module,exports){
-var overArg = require('./_overArg');
-
-/* Built-in method references for those with the same name as other `lodash` methods. */
-var nativeKeys = overArg(Object.keys, Object);
-
-module.exports = nativeKeys;
-
-},{"./_overArg":206}],203:[function(require,module,exports){
-/**
- * This function is like
- * [`Object.keys`](http://ecma-international.org/ecma-262/7.0/#sec-object.keys)
- * except that it includes inherited enumerable properties.
- *
- * @private
- * @param {Object} object The object to query.
- * @returns {Array} Returns the array of property names.
- */
-function nativeKeysIn(object) {
-  var result = [];
-  if (object != null) {
-    for (var key in Object(object)) {
-      result.push(key);
-    }
-  }
-  return result;
-}
-
-module.exports = nativeKeysIn;
-
-},{}],204:[function(require,module,exports){
-var freeGlobal = require('./_freeGlobal');
-
-/** Detect free variable `exports`. */
-var freeExports = typeof exports == 'object' && exports && !exports.nodeType && exports;
-
-/** Detect free variable `module`. */
-var freeModule = freeExports && typeof module == 'object' && module && !module.nodeType && module;
-
-/** Detect the popular CommonJS extension `module.exports`. */
-var moduleExports = freeModule && freeModule.exports === freeExports;
-
-/** Detect free variable `process` from Node.js. */
-var freeProcess = moduleExports && freeGlobal.process;
-
-/** Used to access faster Node.js helpers. */
-var nodeUtil = (function() {
-  try {
-    // Use `util.types` for Node.js 10+.
-    var types = freeModule && freeModule.require && freeModule.require('util').types;
-
-    if (types) {
-      return types;
-    }
-
-    // Legacy `process.binding('util')` for Node.js < 10.
-    return freeProcess && freeProcess.binding && freeProcess.binding('util');
-  } catch (e) {}
-}());
-
-module.exports = nodeUtil;
-
-},{"./_freeGlobal":158}],205:[function(require,module,exports){
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/**
- * Used to resolve the
- * [`toStringTag`](http://ecma-international.org/ecma-262/7.0/#sec-object.prototype.tostring)
- * of values.
- */
-var nativeObjectToString = objectProto.toString;
-
-/**
- * Converts `value` to a string using `Object.prototype.toString`.
- *
- * @private
- * @param {*} value The value to convert.
- * @returns {string} Returns the converted string.
- */
-function objectToString(value) {
-  return nativeObjectToString.call(value);
-}
-
-module.exports = objectToString;
-
-},{}],206:[function(require,module,exports){
-/**
- * Creates a unary function that invokes `func` with its argument transformed.
- *
- * @private
- * @param {Function} func The function to wrap.
- * @param {Function} transform The argument transform.
- * @returns {Function} Returns the new function.
- */
-function overArg(func, transform) {
-  return function(arg) {
-    return func(transform(arg));
-  };
-}
-
-module.exports = overArg;
-
-},{}],207:[function(require,module,exports){
-var apply = require('./_apply');
-
-/* Built-in method references for those with the same name as other `lodash` methods. */
-var nativeMax = Math.max;
-
-/**
- * A specialized version of `baseRest` which transforms the rest array.
- *
- * @private
- * @param {Function} func The function to apply a rest parameter to.
- * @param {number} [start=func.length-1] The start position of the rest parameter.
- * @param {Function} transform The rest array transform.
- * @returns {Function} Returns the new function.
- */
-function overRest(func, start, transform) {
-  start = nativeMax(start === undefined ? (func.length - 1) : start, 0);
-  return function() {
-    var args = arguments,
-        index = -1,
-        length = nativeMax(args.length - start, 0),
-        array = Array(length);
-
-    while (++index < length) {
-      array[index] = args[start + index];
-    }
-    index = -1;
-    var otherArgs = Array(start + 1);
-    while (++index < start) {
-      otherArgs[index] = args[index];
-    }
-    otherArgs[start] = transform(array);
-    return apply(func, this, otherArgs);
-  };
-}
-
-module.exports = overRest;
-
-},{"./_apply":63}],208:[function(require,module,exports){
-var freeGlobal = require('./_freeGlobal');
-
-/** Detect free variable `self`. */
-var freeSelf = typeof self == 'object' && self && self.Object === Object && self;
-
-/** Used as a reference to the global object. */
-var root = freeGlobal || freeSelf || Function('return this')();
-
-module.exports = root;
-
-},{"./_freeGlobal":158}],209:[function(require,module,exports){
-/**
- * Gets the value at `key`, unless `key` is "__proto__" or "constructor".
- *
- * @private
- * @param {Object} object The object to query.
- * @param {string} key The key of the property to get.
- * @returns {*} Returns the property value.
- */
-function safeGet(object, key) {
-  if (key === 'constructor' && typeof object[key] === 'function') {
-    return;
-  }
-
-  if (key == '__proto__') {
-    return;
-  }
-
-  return object[key];
-}
-
-module.exports = safeGet;
-
-},{}],210:[function(require,module,exports){
-/** Used to stand-in for `undefined` hash values. */
-var HASH_UNDEFINED = '__lodash_hash_undefined__';
-
-/**
- * Adds `value` to the array cache.
- *
- * @private
- * @name add
- * @memberOf SetCache
- * @alias push
- * @param {*} value The value to cache.
- * @returns {Object} Returns the cache instance.
- */
-function setCacheAdd(value) {
-  this.__data__.set(value, HASH_UNDEFINED);
-  return this;
-}
-
-module.exports = setCacheAdd;
-
-},{}],211:[function(require,module,exports){
-/**
- * Checks if `value` is in the array cache.
- *
- * @private
- * @name has
- * @memberOf SetCache
- * @param {*} value The value to search for.
- * @returns {number} Returns `true` if `value` is found, else `false`.
- */
-function setCacheHas(value) {
-  return this.__data__.has(value);
-}
-
-module.exports = setCacheHas;
-
-},{}],212:[function(require,module,exports){
-/**
- * Converts `set` to an array of its values.
- *
- * @private
- * @param {Object} set The set to convert.
- * @returns {Array} Returns the values.
- */
-function setToArray(set) {
-  var index = -1,
-      result = Array(set.size);
-
-  set.forEach(function(value) {
-    result[++index] = value;
-  });
-  return result;
-}
-
-module.exports = setToArray;
-
-},{}],213:[function(require,module,exports){
-var baseSetToString = require('./_baseSetToString'),
-    shortOut = require('./_shortOut');
-
-/**
- * Sets the `toString` method of `func` to return `string`.
- *
- * @private
- * @param {Function} func The function to modify.
- * @param {Function} string The `toString` result.
- * @returns {Function} Returns `func`.
- */
-var setToString = shortOut(baseSetToString);
-
-module.exports = setToString;
-
-},{"./_baseSetToString":123,"./_shortOut":214}],214:[function(require,module,exports){
-/** Used to detect hot functions by number of calls within a span of milliseconds. */
-var HOT_COUNT = 800,
-    HOT_SPAN = 16;
-
-/* Built-in method references for those with the same name as other `lodash` methods. */
-var nativeNow = Date.now;
-
-/**
- * Creates a function that'll short out and invoke `identity` instead
- * of `func` when it's called `HOT_COUNT` or more times in `HOT_SPAN`
- * milliseconds.
- *
- * @private
- * @param {Function} func The function to restrict.
- * @returns {Function} Returns the new shortable function.
- */
-function shortOut(func) {
-  var count = 0,
-      lastCalled = 0;
-
-  return function() {
-    var stamp = nativeNow(),
-        remaining = HOT_SPAN - (stamp - lastCalled);
-
-    lastCalled = stamp;
-    if (remaining > 0) {
-      if (++count >= HOT_COUNT) {
-        return arguments[0];
-      }
-    } else {
-      count = 0;
-    }
-    return func.apply(undefined, arguments);
-  };
-}
-
-module.exports = shortOut;
-
-},{}],215:[function(require,module,exports){
-var ListCache = require('./_ListCache');
-
-/**
- * Removes all key-value entries from the stack.
- *
- * @private
- * @name clear
- * @memberOf Stack
- */
-function stackClear() {
-  this.__data__ = new ListCache;
-  this.size = 0;
-}
-
-module.exports = stackClear;
-
-},{"./_ListCache":53}],216:[function(require,module,exports){
-/**
- * Removes `key` and its value from the stack.
- *
- * @private
- * @name delete
- * @memberOf Stack
- * @param {string} key The key of the value to remove.
- * @returns {boolean} Returns `true` if the entry was removed, else `false`.
- */
-function stackDelete(key) {
-  var data = this.__data__,
-      result = data['delete'](key);
-
-  this.size = data.size;
-  return result;
-}
-
-module.exports = stackDelete;
-
-},{}],217:[function(require,module,exports){
-/**
- * Gets the stack value for `key`.
- *
- * @private
- * @name get
- * @memberOf Stack
- * @param {string} key The key of the value to get.
- * @returns {*} Returns the entry value.
- */
-function stackGet(key) {
-  return this.__data__.get(key);
-}
-
-module.exports = stackGet;
-
-},{}],218:[function(require,module,exports){
-/**
- * Checks if a stack value for `key` exists.
- *
- * @private
- * @name has
- * @memberOf Stack
- * @param {string} key The key of the entry to check.
- * @returns {boolean} Returns `true` if an entry for `key` exists, else `false`.
- */
-function stackHas(key) {
-  return this.__data__.has(key);
-}
-
-module.exports = stackHas;
-
-},{}],219:[function(require,module,exports){
-var ListCache = require('./_ListCache'),
-    Map = require('./_Map'),
-    MapCache = require('./_MapCache');
-
-/** Used as the size to enable large array optimizations. */
-var LARGE_ARRAY_SIZE = 200;
-
-/**
- * Sets the stack `key` to `value`.
- *
- * @private
- * @name set
- * @memberOf Stack
- * @param {string} key The key of the value to set.
- * @param {*} value The value to set.
- * @returns {Object} Returns the stack cache instance.
- */
-function stackSet(key, value) {
-  var data = this.__data__;
-  if (data instanceof ListCache) {
-    var pairs = data.__data__;
-    if (!Map || (pairs.length < LARGE_ARRAY_SIZE - 1)) {
-      pairs.push([key, value]);
-      this.size = ++data.size;
       return this;
     }
-    data = this.__data__ = new MapCache(pairs);
-  }
-  data.set(key, value);
-  this.size = data.size;
-  return this;
-}
-
-module.exports = stackSet;
-
-},{"./_ListCache":53,"./_Map":54,"./_MapCache":55}],220:[function(require,module,exports){
-/**
- * A specialized version of `_.indexOf` which performs strict equality
- * comparisons of values, i.e. `===`.
- *
- * @private
- * @param {Array} array The array to inspect.
- * @param {*} value The value to search for.
- * @param {number} fromIndex The index to search from.
- * @returns {number} Returns the index of the matched value, else `-1`.
- */
-function strictIndexOf(array, value, fromIndex) {
-  var index = fromIndex - 1,
-      length = array.length;
-
-  while (++index < length) {
-    if (array[index] === value) {
-      return index;
+    setParent(e, t) {
+      if (!this._isCompound) throw new Error("Cannot set parent in a non-compound graph");
+      if (t === void 0) t = "\0";
+      else {
+        t += "";
+        for (let r = t; r !== void 0; r = this.parent(r)) if (r === e) throw new Error("Setting " + t + " as parent of " + e + " would create a cycle");
+        this.setNode(t);
+      }
+      return this.setNode(e), this._removeFromParentsChildList(e), this._parent[e] = t, this._children[t][e] = true, this;
     }
-  }
-  return -1;
-}
-
-module.exports = strictIndexOf;
-
-},{}],221:[function(require,module,exports){
-var asciiSize = require('./_asciiSize'),
-    hasUnicode = require('./_hasUnicode'),
-    unicodeSize = require('./_unicodeSize');
-
-/**
- * Gets the number of symbols in `string`.
- *
- * @private
- * @param {string} string The string to inspect.
- * @returns {number} Returns the string size.
- */
-function stringSize(string) {
-  return hasUnicode(string)
-    ? unicodeSize(string)
-    : asciiSize(string);
-}
-
-module.exports = stringSize;
-
-},{"./_asciiSize":73,"./_hasUnicode":171,"./_unicodeSize":225}],222:[function(require,module,exports){
-var memoizeCapped = require('./_memoizeCapped');
-
-/** Used to match property names within property paths. */
-var rePropName = /[^.[\]]+|\[(?:(-?\d+(?:\.\d+)?)|(["'])((?:(?!\2)[^\\]|\\.)*?)\2)\]|(?=(?:\.|\[\])(?:\.|\[\]|$))/g;
-
-/** Used to match backslashes in property paths. */
-var reEscapeChar = /\\(\\)?/g;
-
-/**
- * Converts `string` to a property path array.
- *
- * @private
- * @param {string} string The string to convert.
- * @returns {Array} Returns the property path array.
- */
-var stringToPath = memoizeCapped(function(string) {
-  var result = [];
-  if (string.charCodeAt(0) === 46 /* . */) {
-    result.push('');
-  }
-  string.replace(rePropName, function(match, number, quote, subString) {
-    result.push(quote ? subString.replace(reEscapeChar, '$1') : (number || match));
-  });
-  return result;
-});
-
-module.exports = stringToPath;
-
-},{"./_memoizeCapped":200}],223:[function(require,module,exports){
-var isSymbol = require('./isSymbol');
-
-/** Used as references for various `Number` constants. */
-var INFINITY = 1 / 0;
-
-/**
- * Converts `value` to a string key if it's not a string or symbol.
- *
- * @private
- * @param {*} value The value to inspect.
- * @returns {string|symbol} Returns the key.
- */
-function toKey(value) {
-  if (typeof value == 'string' || isSymbol(value)) {
-    return value;
-  }
-  var result = (value + '');
-  return (result == '0' && (1 / value) == -INFINITY) ? '-0' : result;
-}
-
-module.exports = toKey;
-
-},{"./isSymbol":256}],224:[function(require,module,exports){
-/** Used for built-in method references. */
-var funcProto = Function.prototype;
-
-/** Used to resolve the decompiled source of functions. */
-var funcToString = funcProto.toString;
-
-/**
- * Converts `func` to its source code.
- *
- * @private
- * @param {Function} func The function to convert.
- * @returns {string} Returns the source code.
- */
-function toSource(func) {
-  if (func != null) {
-    try {
-      return funcToString.call(func);
-    } catch (e) {}
-    try {
-      return (func + '');
-    } catch (e) {}
-  }
-  return '';
-}
-
-module.exports = toSource;
-
-},{}],225:[function(require,module,exports){
-/** Used to compose unicode character classes. */
-var rsAstralRange = '\\ud800-\\udfff',
-    rsComboMarksRange = '\\u0300-\\u036f',
-    reComboHalfMarksRange = '\\ufe20-\\ufe2f',
-    rsComboSymbolsRange = '\\u20d0-\\u20ff',
-    rsComboRange = rsComboMarksRange + reComboHalfMarksRange + rsComboSymbolsRange,
-    rsVarRange = '\\ufe0e\\ufe0f';
-
-/** Used to compose unicode capture groups. */
-var rsAstral = '[' + rsAstralRange + ']',
-    rsCombo = '[' + rsComboRange + ']',
-    rsFitz = '\\ud83c[\\udffb-\\udfff]',
-    rsModifier = '(?:' + rsCombo + '|' + rsFitz + ')',
-    rsNonAstral = '[^' + rsAstralRange + ']',
-    rsRegional = '(?:\\ud83c[\\udde6-\\uddff]){2}',
-    rsSurrPair = '[\\ud800-\\udbff][\\udc00-\\udfff]',
-    rsZWJ = '\\u200d';
-
-/** Used to compose unicode regexes. */
-var reOptMod = rsModifier + '?',
-    rsOptVar = '[' + rsVarRange + ']?',
-    rsOptJoin = '(?:' + rsZWJ + '(?:' + [rsNonAstral, rsRegional, rsSurrPair].join('|') + ')' + rsOptVar + reOptMod + ')*',
-    rsSeq = rsOptVar + reOptMod + rsOptJoin,
-    rsSymbol = '(?:' + [rsNonAstral + rsCombo + '?', rsCombo, rsRegional, rsSurrPair, rsAstral].join('|') + ')';
-
-/** Used to match [string symbols](https://mathiasbynens.be/notes/javascript-unicode). */
-var reUnicode = RegExp(rsFitz + '(?=' + rsFitz + ')|' + rsSymbol + rsSeq, 'g');
-
-/**
- * Gets the size of a Unicode `string`.
- *
- * @private
- * @param {string} string The string inspect.
- * @returns {number} Returns the string size.
- */
-function unicodeSize(string) {
-  var result = reUnicode.lastIndex = 0;
-  while (reUnicode.test(string)) {
-    ++result;
-  }
-  return result;
-}
-
-module.exports = unicodeSize;
-
-},{}],226:[function(require,module,exports){
-var baseClone = require('./_baseClone');
-
-/** Used to compose bitmasks for cloning. */
-var CLONE_SYMBOLS_FLAG = 4;
-
-/**
- * Creates a shallow clone of `value`.
- *
- * **Note:** This method is loosely based on the
- * [structured clone algorithm](https://mdn.io/Structured_clone_algorithm)
- * and supports cloning arrays, array buffers, booleans, date objects, maps,
- * numbers, `Object` objects, regexes, sets, strings, symbols, and typed
- * arrays. The own enumerable properties of `arguments` objects are cloned
- * as plain objects. An empty object is returned for uncloneable values such
- * as error objects, functions, DOM nodes, and WeakMaps.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to clone.
- * @returns {*} Returns the cloned value.
- * @see _.cloneDeep
- * @example
- *
- * var objects = [{ 'a': 1 }, { 'b': 2 }];
- *
- * var shallow = _.clone(objects);
- * console.log(shallow[0] === objects[0]);
- * // => true
- */
-function clone(value) {
-  return baseClone(value, CLONE_SYMBOLS_FLAG);
-}
-
-module.exports = clone;
-
-},{"./_baseClone":80}],227:[function(require,module,exports){
-var baseClone = require('./_baseClone');
-
-/** Used to compose bitmasks for cloning. */
-var CLONE_DEEP_FLAG = 1,
-    CLONE_SYMBOLS_FLAG = 4;
-
-/**
- * This method is like `_.clone` except that it recursively clones `value`.
- *
- * @static
- * @memberOf _
- * @since 1.0.0
- * @category Lang
- * @param {*} value The value to recursively clone.
- * @returns {*} Returns the deep cloned value.
- * @see _.clone
- * @example
- *
- * var objects = [{ 'a': 1 }, { 'b': 2 }];
- *
- * var deep = _.cloneDeep(objects);
- * console.log(deep[0] === objects[0]);
- * // => false
- */
-function cloneDeep(value) {
-  return baseClone(value, CLONE_DEEP_FLAG | CLONE_SYMBOLS_FLAG);
-}
-
-module.exports = cloneDeep;
-
-},{"./_baseClone":80}],228:[function(require,module,exports){
-/**
- * Creates a function that returns `value`.
- *
- * @static
- * @memberOf _
- * @since 2.4.0
- * @category Util
- * @param {*} value The value to return from the new function.
- * @returns {Function} Returns the new constant function.
- * @example
- *
- * var objects = _.times(2, _.constant({ 'a': 1 }));
- *
- * console.log(objects);
- * // => [{ 'a': 1 }, { 'a': 1 }]
- *
- * console.log(objects[0] === objects[1]);
- * // => true
- */
-function constant(value) {
-  return function() {
-    return value;
-  };
-}
-
-module.exports = constant;
-
-},{}],229:[function(require,module,exports){
-var baseRest = require('./_baseRest'),
-    eq = require('./eq'),
-    isIterateeCall = require('./_isIterateeCall'),
-    keysIn = require('./keysIn');
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Assigns own and inherited enumerable string keyed properties of source
- * objects to the destination object for all destination properties that
- * resolve to `undefined`. Source objects are applied from left to right.
- * Once a property is set, additional values of the same property are ignored.
- *
- * **Note:** This method mutates `object`.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Object
- * @param {Object} object The destination object.
- * @param {...Object} [sources] The source objects.
- * @returns {Object} Returns `object`.
- * @see _.defaultsDeep
- * @example
- *
- * _.defaults({ 'a': 1 }, { 'b': 2 }, { 'a': 3 });
- * // => { 'a': 1, 'b': 2 }
- */
-var defaults = baseRest(function(object, sources) {
-  object = Object(object);
-
-  var index = -1;
-  var length = sources.length;
-  var guard = length > 2 ? sources[2] : undefined;
-
-  if (guard && isIterateeCall(sources[0], sources[1], guard)) {
-    length = 1;
-  }
-
-  while (++index < length) {
-    var source = sources[index];
-    var props = keysIn(source);
-    var propsIndex = -1;
-    var propsLength = props.length;
-
-    while (++propsIndex < propsLength) {
-      var key = props[propsIndex];
-      var value = object[key];
-
-      if (value === undefined ||
-          (eq(value, objectProto[key]) && !hasOwnProperty.call(object, key))) {
-        object[key] = source[key];
+    parent(e) {
+      if (this._isCompound) {
+        let t = this._parent[e];
+        if (t !== "\0") return t;
       }
     }
+    children(e = "\0") {
+      if (this._isCompound) {
+        let t = this._children[e];
+        if (t) return Object.keys(t);
+      } else {
+        if (e === "\0") return this.nodes();
+        if (this.hasNode(e)) return [];
+      }
+      return [];
+    }
+    predecessors(e) {
+      let t = this._preds[e];
+      if (t) return Object.keys(t);
+    }
+    successors(e) {
+      let t = this._sucs[e];
+      if (t) return Object.keys(t);
+    }
+    neighbors(e) {
+      let t = this.predecessors(e);
+      if (t) {
+        let r = new Set(t), i = this.successors(e);
+        if (i) for (let n of i) r.add(n);
+        return Array.from(r.values());
+      }
+    }
+    isLeaf(e) {
+      var r;
+      let t;
+      return this.isDirected() ? t = this.successors(e) : t = this.neighbors(e), ((r = t == null ? void 0 : t.length) != null ? r : 0) === 0;
+    }
+    filterNodes(e) {
+      let t = new this.constructor({ directed: this._isDirected, multigraph: this._isMultigraph, compound: this._isCompound });
+      t.setGraph(this.graph()), Object.entries(this._nodes).forEach(([n, o]) => {
+        e(n) && t.setNode(n, o);
+      }), Object.values(this._edgeObjs).forEach((n) => {
+        t.hasNode(n.v) && t.hasNode(n.w) && t.setEdge(n, this.edge(n));
+      });
+      let r = {}, i = (n) => {
+        let o = this.parent(n);
+        return !o || t.hasNode(o) ? (r[n] = o, o) : o in r ? r[o] : i(o);
+      };
+      return this._isCompound && t.nodes().forEach((n) => t.setParent(n, i(n))), t;
+    }
+    setDefaultEdgeLabel(e) {
+      return typeof e != "function" ? this._defaultEdgeLabelFn = () => e : this._defaultEdgeLabelFn = e, this;
+    }
+    edgeCount() {
+      return this._edgeCount;
+    }
+    edges() {
+      return Object.values(this._edgeObjs);
+    }
+    setPath(e, t) {
+      return e.reduce((r, i) => (t !== void 0 ? this.setEdge(r, i, t) : this.setEdge(r, i), i)), this;
+    }
+    setEdge(e, t, r, i) {
+      let n, o, d, h, c = false;
+      typeof e == "object" && e !== null && "v" in e ? (n = e.v, o = e.w, d = e.name, arguments.length === 2 && (h = t, c = true)) : (n = e, o = t, d = i, arguments.length > 2 && (h = r, c = true)), n = "" + n, o = "" + o, d !== void 0 && (d = "" + d);
+      let a = _(this._isDirected, n, o, d);
+      if (a in this._edgeLabels) return c && (this._edgeLabels[a] = h), this;
+      if (d !== void 0 && !this._isMultigraph) throw new Error("Cannot set a named edge when isMultigraph = false");
+      this.setNode(n), this.setNode(o), this._edgeLabels[a] = c ? h : this._defaultEdgeLabelFn(n, o, d);
+      let u = J(this._isDirected, n, o, d);
+      return n = u.v, o = u.w, Object.freeze(u), this._edgeObjs[a] = u, R(this._preds[o], n), R(this._sucs[n], o), this._in[o][a] = u, this._out[n][a] = u, this._edgeCount++, this;
+    }
+    edge(e, t, r) {
+      let i = arguments.length === 1 ? G(this._isDirected, e) : _(this._isDirected, e, t, r);
+      return this._edgeLabels[i];
+    }
+    edgeAsObj(e, t, r) {
+      let i = arguments.length === 1 ? this.edge(e) : this.edge(e, t, r);
+      return typeof i != "object" || i === null ? { label: i } : i;
+    }
+    hasEdge(e, t, r) {
+      return (arguments.length === 1 ? G(this._isDirected, e) : _(this._isDirected, e, t, r)) in this._edgeLabels;
+    }
+    removeEdge(e, t, r) {
+      let i = arguments.length === 1 ? G(this._isDirected, e) : _(this._isDirected, e, t, r), n = this._edgeObjs[i];
+      if (n) {
+        let o = n.v, d = n.w;
+        delete this._edgeLabels[i], delete this._edgeObjs[i], k(this._preds[d], o), k(this._sucs[o], d), delete this._in[d][i], delete this._out[o][i], this._edgeCount--;
+      }
+      return this;
+    }
+    inEdges(e, t) {
+      return this.isDirected() ? this.filterEdges(this._in[e], e, t) : this.nodeEdges(e, t);
+    }
+    outEdges(e, t) {
+      return this.isDirected() ? this.filterEdges(this._out[e], e, t) : this.nodeEdges(e, t);
+    }
+    nodeEdges(e, t) {
+      if (e in this._nodes) return this.filterEdges({ ...this._in[e], ...this._out[e] }, e, t);
+    }
+    _removeFromParentsChildList(e) {
+      delete this._children[this._parent[e]][e];
+    }
+    filterEdges(e, t, r) {
+      if (!e) return;
+      let i = Object.values(e);
+      return r ? i.filter((n) => n.v === t && n.w === r || n.v === r && n.w === t) : i;
+    }
+  };
+  function R(s, e) {
+    s[e] ? s[e]++ : s[e] = 1;
   }
-
-  return object;
-});
-
-module.exports = defaults;
-
-},{"./_baseRest":121,"./_isIterateeCall":182,"./eq":231,"./keysIn":260}],230:[function(require,module,exports){
-module.exports = require('./forEach');
-
-},{"./forEach":236}],231:[function(require,module,exports){
-/**
- * Performs a
- * [`SameValueZero`](http://ecma-international.org/ecma-262/7.0/#sec-samevaluezero)
- * comparison between two values to determine if they are equivalent.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to compare.
- * @param {*} other The other value to compare.
- * @returns {boolean} Returns `true` if the values are equivalent, else `false`.
- * @example
- *
- * var object = { 'a': 1 };
- * var other = { 'a': 1 };
- *
- * _.eq(object, object);
- * // => true
- *
- * _.eq(object, other);
- * // => false
- *
- * _.eq('a', 'a');
- * // => true
- *
- * _.eq('a', Object('a'));
- * // => false
- *
- * _.eq(NaN, NaN);
- * // => true
- */
-function eq(value, other) {
-  return value === other || (value !== value && other !== other);
-}
-
-module.exports = eq;
-
-},{}],232:[function(require,module,exports){
-var arrayFilter = require('./_arrayFilter'),
-    baseFilter = require('./_baseFilter'),
-    baseIteratee = require('./_baseIteratee'),
-    isArray = require('./isArray');
-
-/**
- * Iterates over elements of `collection`, returning an array of all elements
- * `predicate` returns truthy for. The predicate is invoked with three
- * arguments: (value, index|key, collection).
- *
- * **Note:** Unlike `_.remove`, this method returns a new array.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Collection
- * @param {Array|Object} collection The collection to iterate over.
- * @param {Function} [predicate=_.identity] The function invoked per iteration.
- * @returns {Array} Returns the new filtered array.
- * @see _.reject
- * @example
- *
- * var users = [
- *   { 'user': 'barney', 'age': 36, 'active': true },
- *   { 'user': 'fred',   'age': 40, 'active': false }
- * ];
- *
- * _.filter(users, function(o) { return !o.active; });
- * // => objects for ['fred']
- *
- * // The `_.matches` iteratee shorthand.
- * _.filter(users, { 'age': 36, 'active': true });
- * // => objects for ['barney']
- *
- * // The `_.matchesProperty` iteratee shorthand.
- * _.filter(users, ['active', false]);
- * // => objects for ['fred']
- *
- * // The `_.property` iteratee shorthand.
- * _.filter(users, 'active');
- * // => objects for ['barney']
- */
-function filter(collection, predicate) {
-  var func = isArray(collection) ? arrayFilter : baseFilter;
-  return func(collection, baseIteratee(predicate, 3));
-}
-
-module.exports = filter;
-
-},{"./_arrayFilter":65,"./_baseFilter":84,"./_baseIteratee":105,"./isArray":243}],233:[function(require,module,exports){
-var createFind = require('./_createFind'),
-    findIndex = require('./findIndex');
-
-/**
- * Iterates over elements of `collection`, returning the first element
- * `predicate` returns truthy for. The predicate is invoked with three
- * arguments: (value, index|key, collection).
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Collection
- * @param {Array|Object} collection The collection to inspect.
- * @param {Function} [predicate=_.identity] The function invoked per iteration.
- * @param {number} [fromIndex=0] The index to search from.
- * @returns {*} Returns the matched element, else `undefined`.
- * @example
- *
- * var users = [
- *   { 'user': 'barney',  'age': 36, 'active': true },
- *   { 'user': 'fred',    'age': 40, 'active': false },
- *   { 'user': 'pebbles', 'age': 1,  'active': true }
- * ];
- *
- * _.find(users, function(o) { return o.age < 40; });
- * // => object for 'barney'
- *
- * // The `_.matches` iteratee shorthand.
- * _.find(users, { 'age': 1, 'active': true });
- * // => object for 'pebbles'
- *
- * // The `_.matchesProperty` iteratee shorthand.
- * _.find(users, ['active', false]);
- * // => object for 'fred'
- *
- * // The `_.property` iteratee shorthand.
- * _.find(users, 'active');
- * // => object for 'barney'
- */
-var find = createFind(findIndex);
-
-module.exports = find;
-
-},{"./_createFind":150,"./findIndex":234}],234:[function(require,module,exports){
-var baseFindIndex = require('./_baseFindIndex'),
-    baseIteratee = require('./_baseIteratee'),
-    toInteger = require('./toInteger');
-
-/* Built-in method references for those with the same name as other `lodash` methods. */
-var nativeMax = Math.max;
-
-/**
- * This method is like `_.find` except that it returns the index of the first
- * element `predicate` returns truthy for instead of the element itself.
- *
- * @static
- * @memberOf _
- * @since 1.1.0
- * @category Array
- * @param {Array} array The array to inspect.
- * @param {Function} [predicate=_.identity] The function invoked per iteration.
- * @param {number} [fromIndex=0] The index to search from.
- * @returns {number} Returns the index of the found element, else `-1`.
- * @example
- *
- * var users = [
- *   { 'user': 'barney',  'active': false },
- *   { 'user': 'fred',    'active': false },
- *   { 'user': 'pebbles', 'active': true }
- * ];
- *
- * _.findIndex(users, function(o) { return o.user == 'barney'; });
- * // => 0
- *
- * // The `_.matches` iteratee shorthand.
- * _.findIndex(users, { 'user': 'fred', 'active': false });
- * // => 1
- *
- * // The `_.matchesProperty` iteratee shorthand.
- * _.findIndex(users, ['active', false]);
- * // => 0
- *
- * // The `_.property` iteratee shorthand.
- * _.findIndex(users, 'active');
- * // => 2
- */
-function findIndex(array, predicate, fromIndex) {
-  var length = array == null ? 0 : array.length;
-  if (!length) {
-    return -1;
+  function k(s, e) {
+    s[e] !== void 0 && !--s[e] && delete s[e];
   }
-  var index = fromIndex == null ? 0 : toInteger(fromIndex);
-  if (index < 0) {
-    index = nativeMax(length + index, 0);
+  function _(s, e, t, r) {
+    let i = "" + e, n = "" + t;
+    if (!s && i > n) {
+      let o = i;
+      i = n, n = o;
+    }
+    return i + "" + n + "" + (r === void 0 ? "\0" : r);
   }
-  return baseFindIndex(array, baseIteratee(predicate, 3), index);
-}
-
-module.exports = findIndex;
-
-},{"./_baseFindIndex":85,"./_baseIteratee":105,"./toInteger":280}],235:[function(require,module,exports){
-var baseFlatten = require('./_baseFlatten');
-
-/**
- * Flattens `array` a single level deep.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Array
- * @param {Array} array The array to flatten.
- * @returns {Array} Returns the new flattened array.
- * @example
- *
- * _.flatten([1, [2, [3, [4]], 5]]);
- * // => [1, 2, [3, [4]], 5]
- */
-function flatten(array) {
-  var length = array == null ? 0 : array.length;
-  return length ? baseFlatten(array, 1) : [];
-}
-
-module.exports = flatten;
-
-},{"./_baseFlatten":86}],236:[function(require,module,exports){
-var arrayEach = require('./_arrayEach'),
-    baseEach = require('./_baseEach'),
-    castFunction = require('./_castFunction'),
-    isArray = require('./isArray');
-
-/**
- * Iterates over elements of `collection` and invokes `iteratee` for each element.
- * The iteratee is invoked with three arguments: (value, index|key, collection).
- * Iteratee functions may exit iteration early by explicitly returning `false`.
- *
- * **Note:** As with other "Collections" methods, objects with a "length"
- * property are iterated like arrays. To avoid this behavior use `_.forIn`
- * or `_.forOwn` for object iteration.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @alias each
- * @category Collection
- * @param {Array|Object} collection The collection to iterate over.
- * @param {Function} [iteratee=_.identity] The function invoked per iteration.
- * @returns {Array|Object} Returns `collection`.
- * @see _.forEachRight
- * @example
- *
- * _.forEach([1, 2], function(value) {
- *   console.log(value);
- * });
- * // => Logs `1` then `2`.
- *
- * _.forEach({ 'a': 1, 'b': 2 }, function(value, key) {
- *   console.log(key);
- * });
- * // => Logs 'a' then 'b' (iteration order is not guaranteed).
- */
-function forEach(collection, iteratee) {
-  var func = isArray(collection) ? arrayEach : baseEach;
-  return func(collection, castFunction(iteratee));
-}
-
-module.exports = forEach;
-
-},{"./_arrayEach":64,"./_baseEach":82,"./_castFunction":132,"./isArray":243}],237:[function(require,module,exports){
-var baseFor = require('./_baseFor'),
-    castFunction = require('./_castFunction'),
-    keysIn = require('./keysIn');
-
-/**
- * Iterates over own and inherited enumerable string keyed properties of an
- * object and invokes `iteratee` for each property. The iteratee is invoked
- * with three arguments: (value, key, object). Iteratee functions may exit
- * iteration early by explicitly returning `false`.
- *
- * @static
- * @memberOf _
- * @since 0.3.0
- * @category Object
- * @param {Object} object The object to iterate over.
- * @param {Function} [iteratee=_.identity] The function invoked per iteration.
- * @returns {Object} Returns `object`.
- * @see _.forInRight
- * @example
- *
- * function Foo() {
- *   this.a = 1;
- *   this.b = 2;
- * }
- *
- * Foo.prototype.c = 3;
- *
- * _.forIn(new Foo, function(value, key) {
- *   console.log(key);
- * });
- * // => Logs 'a', 'b', then 'c' (iteration order is not guaranteed).
- */
-function forIn(object, iteratee) {
-  return object == null
-    ? object
-    : baseFor(object, castFunction(iteratee), keysIn);
-}
-
-module.exports = forIn;
-
-},{"./_baseFor":87,"./_castFunction":132,"./keysIn":260}],238:[function(require,module,exports){
-var baseGet = require('./_baseGet');
-
-/**
- * Gets the value at `path` of `object`. If the resolved value is
- * `undefined`, the `defaultValue` is returned in its place.
- *
- * @static
- * @memberOf _
- * @since 3.7.0
- * @category Object
- * @param {Object} object The object to query.
- * @param {Array|string} path The path of the property to get.
- * @param {*} [defaultValue] The value returned for `undefined` resolved values.
- * @returns {*} Returns the resolved value.
- * @example
- *
- * var object = { 'a': [{ 'b': { 'c': 3 } }] };
- *
- * _.get(object, 'a[0].b.c');
- * // => 3
- *
- * _.get(object, ['a', '0', 'b', 'c']);
- * // => 3
- *
- * _.get(object, 'a.b.c', 'default');
- * // => 'default'
- */
-function get(object, path, defaultValue) {
-  var result = object == null ? undefined : baseGet(object, path);
-  return result === undefined ? defaultValue : result;
-}
-
-module.exports = get;
-
-},{"./_baseGet":89}],239:[function(require,module,exports){
-var baseHas = require('./_baseHas'),
-    hasPath = require('./_hasPath');
-
-/**
- * Checks if `path` is a direct property of `object`.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Object
- * @param {Object} object The object to query.
- * @param {Array|string} path The path to check.
- * @returns {boolean} Returns `true` if `path` exists, else `false`.
- * @example
- *
- * var object = { 'a': { 'b': 2 } };
- * var other = _.create({ 'a': _.create({ 'b': 2 }) });
- *
- * _.has(object, 'a');
- * // => true
- *
- * _.has(object, 'a.b');
- * // => true
- *
- * _.has(object, ['a', 'b']);
- * // => true
- *
- * _.has(other, 'a');
- * // => false
- */
-function has(object, path) {
-  return object != null && hasPath(object, path, baseHas);
-}
-
-module.exports = has;
-
-},{"./_baseHas":93,"./_hasPath":170}],240:[function(require,module,exports){
-var baseHasIn = require('./_baseHasIn'),
-    hasPath = require('./_hasPath');
-
-/**
- * Checks if `path` is a direct or inherited property of `object`.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Object
- * @param {Object} object The object to query.
- * @param {Array|string} path The path to check.
- * @returns {boolean} Returns `true` if `path` exists, else `false`.
- * @example
- *
- * var object = _.create({ 'a': _.create({ 'b': 2 }) });
- *
- * _.hasIn(object, 'a');
- * // => true
- *
- * _.hasIn(object, 'a.b');
- * // => true
- *
- * _.hasIn(object, ['a', 'b']);
- * // => true
- *
- * _.hasIn(object, 'b');
- * // => false
- */
-function hasIn(object, path) {
-  return object != null && hasPath(object, path, baseHasIn);
-}
-
-module.exports = hasIn;
-
-},{"./_baseHasIn":94,"./_hasPath":170}],241:[function(require,module,exports){
-/**
- * This method returns the first argument it receives.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Util
- * @param {*} value Any value.
- * @returns {*} Returns `value`.
- * @example
- *
- * var object = { 'a': 1 };
- *
- * console.log(_.identity(object) === object);
- * // => true
- */
-function identity(value) {
-  return value;
-}
-
-module.exports = identity;
-
-},{}],242:[function(require,module,exports){
-var baseIsArguments = require('./_baseIsArguments'),
-    isObjectLike = require('./isObjectLike');
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/** Built-in value references. */
-var propertyIsEnumerable = objectProto.propertyIsEnumerable;
-
-/**
- * Checks if `value` is likely an `arguments` object.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is an `arguments` object,
- *  else `false`.
- * @example
- *
- * _.isArguments(function() { return arguments; }());
- * // => true
- *
- * _.isArguments([1, 2, 3]);
- * // => false
- */
-var isArguments = baseIsArguments(function() { return arguments; }()) ? baseIsArguments : function(value) {
-  return isObjectLike(value) && hasOwnProperty.call(value, 'callee') &&
-    !propertyIsEnumerable.call(value, 'callee');
-};
-
-module.exports = isArguments;
-
-},{"./_baseIsArguments":96,"./isObjectLike":252}],243:[function(require,module,exports){
-/**
- * Checks if `value` is classified as an `Array` object.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is an array, else `false`.
- * @example
- *
- * _.isArray([1, 2, 3]);
- * // => true
- *
- * _.isArray(document.body.children);
- * // => false
- *
- * _.isArray('abc');
- * // => false
- *
- * _.isArray(_.noop);
- * // => false
- */
-var isArray = Array.isArray;
-
-module.exports = isArray;
-
-},{}],244:[function(require,module,exports){
-var isFunction = require('./isFunction'),
-    isLength = require('./isLength');
-
-/**
- * Checks if `value` is array-like. A value is considered array-like if it's
- * not a function and has a `value.length` that's an integer greater than or
- * equal to `0` and less than or equal to `Number.MAX_SAFE_INTEGER`.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is array-like, else `false`.
- * @example
- *
- * _.isArrayLike([1, 2, 3]);
- * // => true
- *
- * _.isArrayLike(document.body.children);
- * // => true
- *
- * _.isArrayLike('abc');
- * // => true
- *
- * _.isArrayLike(_.noop);
- * // => false
- */
-function isArrayLike(value) {
-  return value != null && isLength(value.length) && !isFunction(value);
-}
-
-module.exports = isArrayLike;
-
-},{"./isFunction":248,"./isLength":249}],245:[function(require,module,exports){
-var isArrayLike = require('./isArrayLike'),
-    isObjectLike = require('./isObjectLike');
-
-/**
- * This method is like `_.isArrayLike` except that it also checks if `value`
- * is an object.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is an array-like object,
- *  else `false`.
- * @example
- *
- * _.isArrayLikeObject([1, 2, 3]);
- * // => true
- *
- * _.isArrayLikeObject(document.body.children);
- * // => true
- *
- * _.isArrayLikeObject('abc');
- * // => false
- *
- * _.isArrayLikeObject(_.noop);
- * // => false
- */
-function isArrayLikeObject(value) {
-  return isObjectLike(value) && isArrayLike(value);
-}
-
-module.exports = isArrayLikeObject;
-
-},{"./isArrayLike":244,"./isObjectLike":252}],246:[function(require,module,exports){
-var root = require('./_root'),
-    stubFalse = require('./stubFalse');
-
-/** Detect free variable `exports`. */
-var freeExports = typeof exports == 'object' && exports && !exports.nodeType && exports;
-
-/** Detect free variable `module`. */
-var freeModule = freeExports && typeof module == 'object' && module && !module.nodeType && module;
-
-/** Detect the popular CommonJS extension `module.exports`. */
-var moduleExports = freeModule && freeModule.exports === freeExports;
-
-/** Built-in value references. */
-var Buffer = moduleExports ? root.Buffer : undefined;
-
-/* Built-in method references for those with the same name as other `lodash` methods. */
-var nativeIsBuffer = Buffer ? Buffer.isBuffer : undefined;
-
-/**
- * Checks if `value` is a buffer.
- *
- * @static
- * @memberOf _
- * @since 4.3.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a buffer, else `false`.
- * @example
- *
- * _.isBuffer(new Buffer(2));
- * // => true
- *
- * _.isBuffer(new Uint8Array(2));
- * // => false
- */
-var isBuffer = nativeIsBuffer || stubFalse;
-
-module.exports = isBuffer;
-
-},{"./_root":208,"./stubFalse":278}],247:[function(require,module,exports){
-var baseKeys = require('./_baseKeys'),
-    getTag = require('./_getTag'),
-    isArguments = require('./isArguments'),
-    isArray = require('./isArray'),
-    isArrayLike = require('./isArrayLike'),
-    isBuffer = require('./isBuffer'),
-    isPrototype = require('./_isPrototype'),
-    isTypedArray = require('./isTypedArray');
-
-/** `Object#toString` result references. */
-var mapTag = '[object Map]',
-    setTag = '[object Set]';
-
-/** Used for built-in method references. */
-var objectProto = Object.prototype;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/**
- * Checks if `value` is an empty object, collection, map, or set.
- *
- * Objects are considered empty if they have no own enumerable string keyed
- * properties.
- *
- * Array-like values such as `arguments` objects, arrays, buffers, strings, or
- * jQuery-like collections are considered empty if they have a `length` of `0`.
- * Similarly, maps and sets are considered empty if they have a `size` of `0`.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is empty, else `false`.
- * @example
- *
- * _.isEmpty(null);
- * // => true
- *
- * _.isEmpty(true);
- * // => true
- *
- * _.isEmpty(1);
- * // => true
- *
- * _.isEmpty([1, 2, 3]);
- * // => false
- *
- * _.isEmpty({ 'a': 1 });
- * // => false
- */
-function isEmpty(value) {
-  if (value == null) {
-    return true;
+  function J(s, e, t, r) {
+    let i = "" + e, n = "" + t;
+    if (!s && i > n) {
+      let d = i;
+      i = n, n = d;
+    }
+    let o = { v: i, w: n };
+    return r && (o.name = r), o;
   }
-  if (isArrayLike(value) &&
-      (isArray(value) || typeof value == 'string' || typeof value.splice == 'function' ||
-        isBuffer(value) || isTypedArray(value) || isArguments(value))) {
-    return !value.length;
+  function G(s, e) {
+    return _(s, e.v, e.w, e.name);
   }
-  var tag = getTag(value);
-  if (tag == mapTag || tag == setTag) {
-    return !value.size;
+  var v = {};
+  x(v, { read: () => K, write: () => U });
+  function U(s) {
+    let e = { options: { directed: s.isDirected(), multigraph: s.isMultigraph(), compound: s.isCompound() }, nodes: Y(s), edges: z(s) }, t = s.graph();
+    return t !== void 0 && (e.value = structuredClone(t)), e;
   }
-  if (isPrototype(value)) {
-    return !baseKeys(value).length;
+  function Y(s) {
+    return s.nodes().map((e) => {
+      let t = s.node(e), r = s.parent(e), i = { v: e };
+      return t !== void 0 && (i.value = t), r !== void 0 && (i.parent = r), i;
+    });
   }
-  for (var key in value) {
-    if (hasOwnProperty.call(value, key)) {
+  function z(s) {
+    return s.edges().map((e) => {
+      let t = s.edge(e), r = { v: e.v, w: e.w };
+      return e.name !== void 0 && (r.name = e.name), t !== void 0 && (r.value = t), r;
+    });
+  }
+  function K(s) {
+    let e = new p(s.options);
+    return s.value !== void 0 && e.setGraph(s.value), s.nodes.forEach((t) => {
+      e.setNode(t.v, t.value), t.parent && e.setParent(t.v, t.parent);
+    }), s.edges.forEach((t) => {
+      e.setEdge({ v: t.v, w: t.w, name: t.name }, t.value);
+    }), e;
+  }
+  var F = {};
+  x(F, { CycleException: () => l, bellmanFord: () => y, components: () => P, dijkstra: () => E, dijkstraAll: () => I, findCycles: () => D, floydWarshall: () => O, isAcyclic: () => j, postorder: () => A, preorder: () => W, prim: () => S, shortestPaths: () => M, tarjan: () => L, topsort: () => w });
+  var Q = () => 1;
+  function y(s, e, t, r) {
+    return $(s, String(e), t || Q, r || function(i) {
+      var n;
+      return (n = s.outEdges(i)) != null ? n : [];
+    });
+  }
+  function $(s, e, t, r) {
+    let i = {}, n, o = 0, d = s.nodes(), h = function(u) {
+      let g = i[u.v], f = i[u.w];
+      if (!g || !f) return;
+      let m = t(u);
+      g.distance + m < f.distance && (i[u.w] = { distance: g.distance + m, predecessor: u.v }, n = true);
+    }, c = function() {
+      d.forEach(function(u) {
+        r(u).forEach(function(g) {
+          let f = g.v === u ? g.v : g.w, m = f === g.v ? g.w : g.v;
+          h({ v: f, w: m });
+        });
+      });
+    };
+    d.forEach(function(u) {
+      let g = u === e ? 0 : Number.POSITIVE_INFINITY;
+      i[u] = { distance: g, predecessor: "" };
+    });
+    let a = d.length;
+    for (let u = 1; u < a && (n = false, o++, c(), !!n); u++) ;
+    if (o === a - 1 && (n = false, c(), n)) throw new Error("The graph contains a negative weight cycle");
+    return i;
+  }
+  function P(s) {
+    let e = {}, t = [], r;
+    function i(n) {
+      var o, d;
+      n in e || (e[n] = true, r.push(n), (o = s.successors(n)) == null || o.forEach(i), (d = s.predecessors(n)) == null || d.forEach(i));
+    }
+    return s.nodes().forEach(function(n) {
+      r = [], i(n), r.length && t.push(r);
+    }), t;
+  }
+  var b = class {
+    constructor() {
+      this._arr = [];
+      this._keyIndices = {};
+    }
+    size() {
+      return this._arr.length;
+    }
+    keys() {
+      return this._arr.map((e) => e.key);
+    }
+    has(e) {
+      return e in this._keyIndices;
+    }
+    priority(e) {
+      let t = this._keyIndices[e];
+      if (t !== void 0) return this._arr[t].priority;
+    }
+    min() {
+      if (this.size() === 0) throw new Error("Queue underflow");
+      return this._arr[0].key;
+    }
+    add(e, t) {
+      let r = this._keyIndices, i = String(e);
+      if (!(i in r)) {
+        let n = this._arr, o = n.length;
+        return r[i] = o, n.push({ key: i, priority: t }), this._decrease(o), true;
+      }
       return false;
     }
+    removeMin() {
+      if (this.size() === 0) throw new Error("Queue underflow");
+      this._swap(0, this._arr.length - 1);
+      let e = this._arr.pop();
+      return delete this._keyIndices[e.key], this._heapify(0), e.key;
+    }
+    decrease(e, t) {
+      let r = this._keyIndices[e];
+      if (r === void 0) throw new Error(`Key not found: ${e}`);
+      let i = this._arr[r].priority;
+      if (t > i) throw new Error(`New priority is greater than current priority. Key: ${e} Old: ${i} New: ${t}`);
+      this._arr[r].priority = t, this._decrease(r);
+    }
+    _heapify(e) {
+      let t = this._arr, r = 2 * e, i = r + 1, n = e;
+      r < t.length && (n = t[r].priority < t[n].priority ? r : n, i < t.length && (n = t[i].priority < t[n].priority ? i : n), n !== e && (this._swap(e, n), this._heapify(n)));
+    }
+    _decrease(e) {
+      let t = this._arr, r = t[e].priority, i;
+      for (; e !== 0 && (i = e >> 1, !(t[i].priority < r)); ) this._swap(e, i), e = i;
+    }
+    _swap(e, t) {
+      let r = this._arr, i = this._keyIndices, n = r[e], o = r[t];
+      r[e] = o, r[t] = n, i[o.key] = e, i[n.key] = t;
+    }
+  };
+  var q = () => 1;
+  function E(s, e, t, r) {
+    let i = function(n) {
+      var o;
+      return (o = s.outEdges(n)) != null ? o : [];
+    };
+    return B(s, String(e), t || q, r || i);
   }
-  return true;
-}
-
-module.exports = isEmpty;
-
-},{"./_baseKeys":106,"./_getTag":168,"./_isPrototype":186,"./isArguments":242,"./isArray":243,"./isArrayLike":244,"./isBuffer":246,"./isTypedArray":257}],248:[function(require,module,exports){
-var baseGetTag = require('./_baseGetTag'),
-    isObject = require('./isObject');
-
-/** `Object#toString` result references. */
-var asyncTag = '[object AsyncFunction]',
-    funcTag = '[object Function]',
-    genTag = '[object GeneratorFunction]',
-    proxyTag = '[object Proxy]';
-
-/**
- * Checks if `value` is classified as a `Function` object.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a function, else `false`.
- * @example
- *
- * _.isFunction(_);
- * // => true
- *
- * _.isFunction(/abc/);
- * // => false
- */
-function isFunction(value) {
-  if (!isObject(value)) {
-    return false;
+  function B(s, e, t, r) {
+    let i = {}, n = new b(), o, d, h = function(c) {
+      let a = c.v !== o ? c.v : c.w, u = i[a];
+      if (!u) return;
+      let g = t(c), f = d.distance + g;
+      if (g < 0) throw new Error("dijkstra does not allow negative edge weights. Bad edge: " + c + " Weight: " + g);
+      f < u.distance && (u.distance = f, u.predecessor = o, n.decrease(a, f));
+    };
+    for (s.nodes().forEach(function(c) {
+      let a = c === e ? 0 : Number.POSITIVE_INFINITY;
+      i[c] = { distance: a, predecessor: "" }, n.add(c, a);
+    }); n.size() > 0; ) {
+      o = n.removeMin();
+      let c = i[o];
+      if (!c || c.distance === Number.POSITIVE_INFINITY) break;
+      d = c, r(o).forEach(h);
+    }
+    return i;
   }
-  // The use of `Object#toString` avoids issues with the `typeof` operator
-  // in Safari 9 which returns 'object' for typed arrays and other constructors.
-  var tag = baseGetTag(value);
-  return tag == funcTag || tag == genTag || tag == asyncTag || tag == proxyTag;
-}
-
-module.exports = isFunction;
-
-},{"./_baseGetTag":91,"./isObject":251}],249:[function(require,module,exports){
-/** Used as references for various `Number` constants. */
-var MAX_SAFE_INTEGER = 9007199254740991;
-
-/**
- * Checks if `value` is a valid array-like length.
- *
- * **Note:** This method is loosely based on
- * [`ToLength`](http://ecma-international.org/ecma-262/7.0/#sec-tolength).
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a valid length, else `false`.
- * @example
- *
- * _.isLength(3);
- * // => true
- *
- * _.isLength(Number.MIN_VALUE);
- * // => false
- *
- * _.isLength(Infinity);
- * // => false
- *
- * _.isLength('3');
- * // => false
- */
-function isLength(value) {
-  return typeof value == 'number' &&
-    value > -1 && value % 1 == 0 && value <= MAX_SAFE_INTEGER;
-}
-
-module.exports = isLength;
-
-},{}],250:[function(require,module,exports){
-var baseIsMap = require('./_baseIsMap'),
-    baseUnary = require('./_baseUnary'),
-    nodeUtil = require('./_nodeUtil');
-
-/* Node.js helper references. */
-var nodeIsMap = nodeUtil && nodeUtil.isMap;
-
-/**
- * Checks if `value` is classified as a `Map` object.
- *
- * @static
- * @memberOf _
- * @since 4.3.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a map, else `false`.
- * @example
- *
- * _.isMap(new Map);
- * // => true
- *
- * _.isMap(new WeakMap);
- * // => false
- */
-var isMap = nodeIsMap ? baseUnary(nodeIsMap) : baseIsMap;
-
-module.exports = isMap;
-
-},{"./_baseIsMap":99,"./_baseUnary":127,"./_nodeUtil":204}],251:[function(require,module,exports){
-/**
- * Checks if `value` is the
- * [language type](http://www.ecma-international.org/ecma-262/7.0/#sec-ecmascript-language-types)
- * of `Object`. (e.g. arrays, functions, objects, regexes, `new Number(0)`, and `new String('')`)
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is an object, else `false`.
- * @example
- *
- * _.isObject({});
- * // => true
- *
- * _.isObject([1, 2, 3]);
- * // => true
- *
- * _.isObject(_.noop);
- * // => true
- *
- * _.isObject(null);
- * // => false
- */
-function isObject(value) {
-  var type = typeof value;
-  return value != null && (type == 'object' || type == 'function');
-}
-
-module.exports = isObject;
-
-},{}],252:[function(require,module,exports){
-/**
- * Checks if `value` is object-like. A value is object-like if it's not `null`
- * and has a `typeof` result of "object".
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is object-like, else `false`.
- * @example
- *
- * _.isObjectLike({});
- * // => true
- *
- * _.isObjectLike([1, 2, 3]);
- * // => true
- *
- * _.isObjectLike(_.noop);
- * // => false
- *
- * _.isObjectLike(null);
- * // => false
- */
-function isObjectLike(value) {
-  return value != null && typeof value == 'object';
-}
-
-module.exports = isObjectLike;
-
-},{}],253:[function(require,module,exports){
-var baseGetTag = require('./_baseGetTag'),
-    getPrototype = require('./_getPrototype'),
-    isObjectLike = require('./isObjectLike');
-
-/** `Object#toString` result references. */
-var objectTag = '[object Object]';
-
-/** Used for built-in method references. */
-var funcProto = Function.prototype,
-    objectProto = Object.prototype;
-
-/** Used to resolve the decompiled source of functions. */
-var funcToString = funcProto.toString;
-
-/** Used to check objects for own properties. */
-var hasOwnProperty = objectProto.hasOwnProperty;
-
-/** Used to infer the `Object` constructor. */
-var objectCtorString = funcToString.call(Object);
-
-/**
- * Checks if `value` is a plain object, that is, an object created by the
- * `Object` constructor or one with a `[[Prototype]]` of `null`.
- *
- * @static
- * @memberOf _
- * @since 0.8.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a plain object, else `false`.
- * @example
- *
- * function Foo() {
- *   this.a = 1;
- * }
- *
- * _.isPlainObject(new Foo);
- * // => false
- *
- * _.isPlainObject([1, 2, 3]);
- * // => false
- *
- * _.isPlainObject({ 'x': 0, 'y': 0 });
- * // => true
- *
- * _.isPlainObject(Object.create(null));
- * // => true
- */
-function isPlainObject(value) {
-  if (!isObjectLike(value) || baseGetTag(value) != objectTag) {
-    return false;
+  function I(s, e, t) {
+    return s.nodes().reduce(function(r, i) {
+      return r[i] = E(s, i, e, t), r;
+    }, {});
   }
-  var proto = getPrototype(value);
-  if (proto === null) {
+  function L(s) {
+    let e = 0, t = [], r = {}, i = [];
+    function n(o) {
+      var h;
+      let d = r[o] = { onStack: true, lowlink: e, index: e++ };
+      if (t.push(o), (h = s.successors(o)) == null || h.forEach(function(c) {
+        if (c in r) {
+          let a = r[c];
+          a != null && a.onStack && (d.lowlink = Math.min(d.lowlink, a.index));
+        } else {
+          n(c);
+          let a = r[c];
+          a && (d.lowlink = Math.min(d.lowlink, a.lowlink));
+        }
+      }), d.lowlink === d.index) {
+        let c = [], a;
+        do {
+          a = t.pop();
+          let u = r[a];
+          u && (u.onStack = false), c.push(a);
+        } while (o !== a);
+        i.push(c);
+      }
+    }
+    return s.nodes().forEach(function(o) {
+      o in r || n(o);
+    }), i;
+  }
+  function D(s) {
+    return L(s).filter(function(e) {
+      var r;
+      let t = e[0];
+      return t ? e.length > 1 || e.length === 1 && ((r = s.outEdges(t, t)) != null ? r : []).length > 0 : false;
+    });
+  }
+  var X = () => 1;
+  function O(s, e, t) {
+    return Z(s, e || X, t || function(r) {
+      var i;
+      return (i = s.outEdges(r)) != null ? i : [];
+    });
+  }
+  function Z(s, e, t) {
+    let r = {}, i = s.nodes();
+    return i.forEach(function(n) {
+      let o = {};
+      r[n] = o, o[n] = { distance: 0, predecessor: "" }, i.forEach(function(d) {
+        n !== d && (o[d] = { distance: Number.POSITIVE_INFINITY, predecessor: "" });
+      }), t(n).forEach(function(d) {
+        let h = d.v === n ? d.w : d.v, c = e(d);
+        o[h] = { distance: c, predecessor: n };
+      });
+    }), i.forEach(function(n) {
+      let o = r[n];
+      o && i.forEach(function(d) {
+        let h = r[d];
+        h && i.forEach(function(c) {
+          let a = h[n], u = o[c], g = h[c];
+          if (a && u && g) {
+            let f = a.distance + u.distance;
+            f < g.distance && (g.distance = f, g.predecessor = u.predecessor);
+          }
+        });
+      });
+    }), r;
+  }
+  var l = class extends Error {
+    constructor(e) {
+      super(e), this.name = "CycleException";
+    }
+  };
+  function w(s) {
+    let e = {}, t = {}, r = [];
+    function i(n) {
+      var o;
+      if (n in t) throw new l();
+      n in e || (t[n] = true, e[n] = true, (o = s.predecessors(n)) == null || o.forEach(i), delete t[n], r.push(n));
+    }
+    if (s.sinks().forEach(i), Object.keys(e).length !== s.nodeCount()) throw new l();
+    return r;
+  }
+  function j(s) {
+    try {
+      w(s);
+    } catch (e) {
+      if (e instanceof l) return false;
+      throw e;
+    }
     return true;
   }
-  var Ctor = hasOwnProperty.call(proto, 'constructor') && proto.constructor;
-  return typeof Ctor == 'function' && Ctor instanceof Ctor &&
-    funcToString.call(Ctor) == objectCtorString;
-}
-
-module.exports = isPlainObject;
-
-},{"./_baseGetTag":91,"./_getPrototype":164,"./isObjectLike":252}],254:[function(require,module,exports){
-var baseIsSet = require('./_baseIsSet'),
-    baseUnary = require('./_baseUnary'),
-    nodeUtil = require('./_nodeUtil');
-
-/* Node.js helper references. */
-var nodeIsSet = nodeUtil && nodeUtil.isSet;
-
-/**
- * Checks if `value` is classified as a `Set` object.
- *
- * @static
- * @memberOf _
- * @since 4.3.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a set, else `false`.
- * @example
- *
- * _.isSet(new Set);
- * // => true
- *
- * _.isSet(new WeakSet);
- * // => false
- */
-var isSet = nodeIsSet ? baseUnary(nodeIsSet) : baseIsSet;
-
-module.exports = isSet;
-
-},{"./_baseIsSet":103,"./_baseUnary":127,"./_nodeUtil":204}],255:[function(require,module,exports){
-var baseGetTag = require('./_baseGetTag'),
-    isArray = require('./isArray'),
-    isObjectLike = require('./isObjectLike');
-
-/** `Object#toString` result references. */
-var stringTag = '[object String]';
-
-/**
- * Checks if `value` is classified as a `String` primitive or object.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a string, else `false`.
- * @example
- *
- * _.isString('abc');
- * // => true
- *
- * _.isString(1);
- * // => false
- */
-function isString(value) {
-  return typeof value == 'string' ||
-    (!isArray(value) && isObjectLike(value) && baseGetTag(value) == stringTag);
-}
-
-module.exports = isString;
-
-},{"./_baseGetTag":91,"./isArray":243,"./isObjectLike":252}],256:[function(require,module,exports){
-var baseGetTag = require('./_baseGetTag'),
-    isObjectLike = require('./isObjectLike');
-
-/** `Object#toString` result references. */
-var symbolTag = '[object Symbol]';
-
-/**
- * Checks if `value` is classified as a `Symbol` primitive or object.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a symbol, else `false`.
- * @example
- *
- * _.isSymbol(Symbol.iterator);
- * // => true
- *
- * _.isSymbol('abc');
- * // => false
- */
-function isSymbol(value) {
-  return typeof value == 'symbol' ||
-    (isObjectLike(value) && baseGetTag(value) == symbolTag);
-}
-
-module.exports = isSymbol;
-
-},{"./_baseGetTag":91,"./isObjectLike":252}],257:[function(require,module,exports){
-var baseIsTypedArray = require('./_baseIsTypedArray'),
-    baseUnary = require('./_baseUnary'),
-    nodeUtil = require('./_nodeUtil');
-
-/* Node.js helper references. */
-var nodeIsTypedArray = nodeUtil && nodeUtil.isTypedArray;
-
-/**
- * Checks if `value` is classified as a typed array.
- *
- * @static
- * @memberOf _
- * @since 3.0.0
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is a typed array, else `false`.
- * @example
- *
- * _.isTypedArray(new Uint8Array);
- * // => true
- *
- * _.isTypedArray([]);
- * // => false
- */
-var isTypedArray = nodeIsTypedArray ? baseUnary(nodeIsTypedArray) : baseIsTypedArray;
-
-module.exports = isTypedArray;
-
-},{"./_baseIsTypedArray":104,"./_baseUnary":127,"./_nodeUtil":204}],258:[function(require,module,exports){
-/**
- * Checks if `value` is `undefined`.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Lang
- * @param {*} value The value to check.
- * @returns {boolean} Returns `true` if `value` is `undefined`, else `false`.
- * @example
- *
- * _.isUndefined(void 0);
- * // => true
- *
- * _.isUndefined(null);
- * // => false
- */
-function isUndefined(value) {
-  return value === undefined;
-}
-
-module.exports = isUndefined;
-
-},{}],259:[function(require,module,exports){
-var arrayLikeKeys = require('./_arrayLikeKeys'),
-    baseKeys = require('./_baseKeys'),
-    isArrayLike = require('./isArrayLike');
-
-/**
- * Creates an array of the own enumerable property names of `object`.
- *
- * **Note:** Non-object values are coerced to objects. See the
- * [ES spec](http://ecma-international.org/ecma-262/7.0/#sec-object.keys)
- * for more details.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Object
- * @param {Object} object The object to query.
- * @returns {Array} Returns the array of property names.
- * @example
- *
- * function Foo() {
- *   this.a = 1;
- *   this.b = 2;
- * }
- *
- * Foo.prototype.c = 3;
- *
- * _.keys(new Foo);
- * // => ['a', 'b'] (iteration order is not guaranteed)
- *
- * _.keys('hi');
- * // => ['0', '1']
- */
-function keys(object) {
-  return isArrayLike(object) ? arrayLikeKeys(object) : baseKeys(object);
-}
-
-module.exports = keys;
-
-},{"./_arrayLikeKeys":68,"./_baseKeys":106,"./isArrayLike":244}],260:[function(require,module,exports){
-var arrayLikeKeys = require('./_arrayLikeKeys'),
-    baseKeysIn = require('./_baseKeysIn'),
-    isArrayLike = require('./isArrayLike');
-
-/**
- * Creates an array of the own and inherited enumerable property names of `object`.
- *
- * **Note:** Non-object values are coerced to objects.
- *
- * @static
- * @memberOf _
- * @since 3.0.0
- * @category Object
- * @param {Object} object The object to query.
- * @returns {Array} Returns the array of property names.
- * @example
- *
- * function Foo() {
- *   this.a = 1;
- *   this.b = 2;
- * }
- *
- * Foo.prototype.c = 3;
- *
- * _.keysIn(new Foo);
- * // => ['a', 'b', 'c'] (iteration order is not guaranteed)
- */
-function keysIn(object) {
-  return isArrayLike(object) ? arrayLikeKeys(object, true) : baseKeysIn(object);
-}
-
-module.exports = keysIn;
-
-},{"./_arrayLikeKeys":68,"./_baseKeysIn":107,"./isArrayLike":244}],261:[function(require,module,exports){
-/**
- * Gets the last element of `array`.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Array
- * @param {Array} array The array to query.
- * @returns {*} Returns the last element of `array`.
- * @example
- *
- * _.last([1, 2, 3]);
- * // => 3
- */
-function last(array) {
-  var length = array == null ? 0 : array.length;
-  return length ? array[length - 1] : undefined;
-}
-
-module.exports = last;
-
-},{}],262:[function(require,module,exports){
-var arrayMap = require('./_arrayMap'),
-    baseIteratee = require('./_baseIteratee'),
-    baseMap = require('./_baseMap'),
-    isArray = require('./isArray');
-
-/**
- * Creates an array of values by running each element in `collection` thru
- * `iteratee`. The iteratee is invoked with three arguments:
- * (value, index|key, collection).
- *
- * Many lodash methods are guarded to work as iteratees for methods like
- * `_.every`, `_.filter`, `_.map`, `_.mapValues`, `_.reject`, and `_.some`.
- *
- * The guarded methods are:
- * `ary`, `chunk`, `curry`, `curryRight`, `drop`, `dropRight`, `every`,
- * `fill`, `invert`, `parseInt`, `random`, `range`, `rangeRight`, `repeat`,
- * `sampleSize`, `slice`, `some`, `sortBy`, `split`, `take`, `takeRight`,
- * `template`, `trim`, `trimEnd`, `trimStart`, and `words`
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Collection
- * @param {Array|Object} collection The collection to iterate over.
- * @param {Function} [iteratee=_.identity] The function invoked per iteration.
- * @returns {Array} Returns the new mapped array.
- * @example
- *
- * function square(n) {
- *   return n * n;
- * }
- *
- * _.map([4, 8], square);
- * // => [16, 64]
- *
- * _.map({ 'a': 4, 'b': 8 }, square);
- * // => [16, 64] (iteration order is not guaranteed)
- *
- * var users = [
- *   { 'user': 'barney' },
- *   { 'user': 'fred' }
- * ];
- *
- * // The `_.property` iteratee shorthand.
- * _.map(users, 'user');
- * // => ['barney', 'fred']
- */
-function map(collection, iteratee) {
-  var func = isArray(collection) ? arrayMap : baseMap;
-  return func(collection, baseIteratee(iteratee, 3));
-}
-
-module.exports = map;
-
-},{"./_arrayMap":69,"./_baseIteratee":105,"./_baseMap":109,"./isArray":243}],263:[function(require,module,exports){
-var baseAssignValue = require('./_baseAssignValue'),
-    baseForOwn = require('./_baseForOwn'),
-    baseIteratee = require('./_baseIteratee');
-
-/**
- * Creates an object with the same keys as `object` and values generated
- * by running each own enumerable string keyed property of `object` thru
- * `iteratee`. The iteratee is invoked with three arguments:
- * (value, key, object).
- *
- * @static
- * @memberOf _
- * @since 2.4.0
- * @category Object
- * @param {Object} object The object to iterate over.
- * @param {Function} [iteratee=_.identity] The function invoked per iteration.
- * @returns {Object} Returns the new mapped object.
- * @see _.mapKeys
- * @example
- *
- * var users = {
- *   'fred':    { 'user': 'fred',    'age': 40 },
- *   'pebbles': { 'user': 'pebbles', 'age': 1 }
- * };
- *
- * _.mapValues(users, function(o) { return o.age; });
- * // => { 'fred': 40, 'pebbles': 1 } (iteration order is not guaranteed)
- *
- * // The `_.property` iteratee shorthand.
- * _.mapValues(users, 'age');
- * // => { 'fred': 40, 'pebbles': 1 } (iteration order is not guaranteed)
- */
-function mapValues(object, iteratee) {
-  var result = {};
-  iteratee = baseIteratee(iteratee, 3);
-
-  baseForOwn(object, function(value, key, object) {
-    baseAssignValue(result, key, iteratee(value, key, object));
-  });
-  return result;
-}
-
-module.exports = mapValues;
-
-},{"./_baseAssignValue":79,"./_baseForOwn":88,"./_baseIteratee":105}],264:[function(require,module,exports){
-var baseExtremum = require('./_baseExtremum'),
-    baseGt = require('./_baseGt'),
-    identity = require('./identity');
-
-/**
- * Computes the maximum value of `array`. If `array` is empty or falsey,
- * `undefined` is returned.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Math
- * @param {Array} array The array to iterate over.
- * @returns {*} Returns the maximum value.
- * @example
- *
- * _.max([4, 2, 8, 6]);
- * // => 8
- *
- * _.max([]);
- * // => undefined
- */
-function max(array) {
-  return (array && array.length)
-    ? baseExtremum(array, identity, baseGt)
-    : undefined;
-}
-
-module.exports = max;
-
-},{"./_baseExtremum":83,"./_baseGt":92,"./identity":241}],265:[function(require,module,exports){
-var MapCache = require('./_MapCache');
-
-/** Error message constants. */
-var FUNC_ERROR_TEXT = 'Expected a function';
-
-/**
- * Creates a function that memoizes the result of `func`. If `resolver` is
- * provided, it determines the cache key for storing the result based on the
- * arguments provided to the memoized function. By default, the first argument
- * provided to the memoized function is used as the map cache key. The `func`
- * is invoked with the `this` binding of the memoized function.
- *
- * **Note:** The cache is exposed as the `cache` property on the memoized
- * function. Its creation may be customized by replacing the `_.memoize.Cache`
- * constructor with one whose instances implement the
- * [`Map`](http://ecma-international.org/ecma-262/7.0/#sec-properties-of-the-map-prototype-object)
- * method interface of `clear`, `delete`, `get`, `has`, and `set`.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Function
- * @param {Function} func The function to have its output memoized.
- * @param {Function} [resolver] The function to resolve the cache key.
- * @returns {Function} Returns the new memoized function.
- * @example
- *
- * var object = { 'a': 1, 'b': 2 };
- * var other = { 'c': 3, 'd': 4 };
- *
- * var values = _.memoize(_.values);
- * values(object);
- * // => [1, 2]
- *
- * values(other);
- * // => [3, 4]
- *
- * object.a = 2;
- * values(object);
- * // => [1, 2]
- *
- * // Modify the result cache.
- * values.cache.set(object, ['a', 'b']);
- * values(object);
- * // => ['a', 'b']
- *
- * // Replace `_.memoize.Cache`.
- * _.memoize.Cache = WeakMap;
- */
-function memoize(func, resolver) {
-  if (typeof func != 'function' || (resolver != null && typeof resolver != 'function')) {
-    throw new TypeError(FUNC_ERROR_TEXT);
+  function C(s, e, t, r, i) {
+    Array.isArray(e) || (e = [e]);
+    let n = ((d) => {
+      var h;
+      return (h = s.isDirected() ? s.successors(d) : s.neighbors(d)) != null ? h : [];
+    }), o = {};
+    return e.forEach(function(d) {
+      if (!s.hasNode(d)) throw new Error("Graph does not have node: " + d);
+      i = T(s, d, t === "post", o, n, r, i);
+    }), i;
   }
-  var memoized = function() {
-    var args = arguments,
-        key = resolver ? resolver.apply(this, args) : args[0],
-        cache = memoized.cache;
-
-    if (cache.has(key)) {
-      return cache.get(key);
+  function T(s, e, t, r, i, n, o) {
+    return e in r || (r[e] = true, t || (o = n(o, e)), i(e).forEach(function(d) {
+      o = T(s, d, t, r, i, n, o);
+    }), t && (o = n(o, e))), o;
+  }
+  function N(s, e, t) {
+    return C(s, e, t, function(r, i) {
+      return r.push(i), r;
+    }, []);
+  }
+  function A(s, e) {
+    return N(s, e, "post");
+  }
+  function W(s, e) {
+    return N(s, e, "pre");
+  }
+  function S(s, e) {
+    var c;
+    let t = new p(), r = {}, i = new b(), n;
+    function o(a) {
+      let u = a.v === n ? a.w : a.v, g = i.priority(u);
+      if (g !== void 0) {
+        let f = e(a);
+        f < g && (r[u] = n, i.decrease(u, f));
+      }
     }
-    var result = func.apply(this, args);
-    memoized.cache = cache.set(key, result) || cache;
+    if (s.nodeCount() === 0) return t;
+    s.nodes().forEach(function(a) {
+      i.add(a, Number.POSITIVE_INFINITY), t.setNode(a);
+    });
+    let d = s.nodes()[0];
+    d !== void 0 && i.decrease(d, 0);
+    let h = false;
+    for (; i.size() > 0; ) {
+      if (n = i.removeMin(), n in r) t.setEdge(n, r[n]);
+      else {
+        if (h) throw new Error("Input graph is not connected: " + s);
+        h = true;
+      }
+      (c = s.nodeEdges(n)) == null || c.forEach(o);
+    }
+    return t;
+  }
+  function M(s, e, t, r) {
+    return ee(s, e, t, r != null ? r : ((i) => {
+      var n;
+      return (n = s.outEdges(i)) != null ? n : [];
+    }));
+  }
+  function ee(s, e, t, r) {
+    if (t === void 0) return E(s, e, t, r);
+    let i = false, n = s.nodes();
+    for (let o = 0; o < n.length; o++) {
+      let d = n[o];
+      if (d === void 0) continue;
+      let h = r(d);
+      for (let c = 0; c < h.length; c++) {
+        let a = h[c];
+        if (!a) continue;
+        let u = a.v === d ? a.v : a.w, g = u === a.v ? a.w : a.v;
+        t({ v: u, w: g }) < 0 && (i = true);
+      }
+      if (i) return y(s, e, t, r);
+    }
+    return E(s, e, t, r);
+  }
+
+  // lib/graph-lib.ts
+  var Graph = p;
+
+  // lib/util.ts
+  function addDummyNode(graph, type, attrs, name) {
+    let v2 = name;
+    while (graph.hasNode(v2)) {
+      v2 = uniqueId(name);
+    }
+    attrs.dummy = type;
+    graph.setNode(v2, attrs);
+    return v2;
+  }
+  function simplify(graph) {
+    const simplified = new Graph().setGraph(graph.graph());
+    graph.nodes().forEach((v2) => simplified.setNode(v2, graph.node(v2)));
+    graph.edges().forEach((e) => {
+      const simpleLabel = simplified.edge(e.v, e.w) || { weight: 0, minlen: 1 };
+      const label = graph.edge(e);
+      simplified.setEdge(e.v, e.w, {
+        weight: simpleLabel.weight + label.weight,
+        minlen: Math.max(simpleLabel.minlen, label.minlen)
+      });
+    });
+    return simplified;
+  }
+  function asNonCompoundGraph(graph) {
+    const simplified = new Graph({ multigraph: graph.isMultigraph() }).setGraph(graph.graph());
+    graph.nodes().forEach((v2) => {
+      if (!graph.children(v2).length) {
+        simplified.setNode(v2, graph.node(v2));
+      }
+    });
+    graph.edges().forEach((e) => {
+      simplified.setEdge(e, graph.edge(e));
+    });
+    return simplified;
+  }
+  function intersectRect(rect, point) {
+    const x2 = rect.x;
+    const y2 = rect.y;
+    const dx = point.x - x2;
+    const dy = point.y - y2;
+    let w2 = rect.width / 2;
+    let h = rect.height / 2;
+    if (!dx && !dy) {
+      throw new Error("Not possible to find intersection inside of the rectangle");
+    }
+    let sx, sy;
+    if (dx === 0 || Math.abs(dy) * w2 > Math.abs(dx) * h) {
+      if (dy < 0) {
+        h = -h;
+      }
+      sx = h * dx / dy;
+      sy = h;
+    } else {
+      if (dx < 0) {
+        w2 = -w2;
+      }
+      sx = w2;
+      sy = w2 * dy / dx;
+    }
+    return { x: x2 + sx, y: y2 + sy };
+  }
+  function buildLayerMatrix(graph) {
+    const layering = range(maxRank(graph) + 1).map(() => []);
+    graph.nodes().forEach((v2) => {
+      const node = graph.node(v2);
+      const rank2 = node.rank;
+      if (rank2 !== void 0) {
+        if (!layering[rank2]) {
+          layering[rank2] = [];
+        }
+        layering[rank2][node.order] = v2;
+      }
+    });
+    return layering;
+  }
+  function normalizeRanks(graph) {
+    const nodeRanks = graph.nodes().map((v2) => {
+      const rank2 = graph.node(v2).rank;
+      if (rank2 === void 0) {
+        return Number.MAX_VALUE;
+      }
+      return rank2;
+    });
+    const min = applyWithChunking(Math.min, nodeRanks);
+    graph.nodes().forEach((v2) => {
+      const node = graph.node(v2);
+      if (Object.hasOwn(node, "rank")) {
+        node.rank -= min;
+      }
+    });
+  }
+  function removeEmptyRanks(graph) {
+    const nodeRanks = graph.nodes().map((v2) => graph.node(v2).rank).filter((rank2) => rank2 !== void 0);
+    const offset = applyWithChunking(Math.min, nodeRanks);
+    const layers = [];
+    graph.nodes().forEach((v2) => {
+      const rank2 = graph.node(v2).rank - offset;
+      if (!layers[rank2]) {
+        layers[rank2] = [];
+      }
+      layers[rank2].push(v2);
+    });
+    let delta = 0;
+    const nodeRankFactor = graph.graph().nodeRankFactor;
+    Array.from(layers).forEach((vs, i) => {
+      if (vs === void 0 && i % nodeRankFactor !== 0) {
+        --delta;
+      } else if (vs !== void 0 && delta) {
+        vs.forEach((v2) => graph.node(v2).rank += delta);
+      }
+    });
+  }
+  function addBorderNode(graph, prefix, rank2, order2) {
+    const node = {
+      width: 0,
+      height: 0
+    };
+    if (arguments.length >= 4) {
+      node.rank = rank2;
+      node.order = order2;
+    }
+    return addDummyNode(graph, "border", node, prefix);
+  }
+  function splitToChunks(array, chunkSize = CHUNKING_THRESHOLD) {
+    const chunks = [];
+    for (let i = 0; i < array.length; i += chunkSize) {
+      const chunk = array.slice(i, i + chunkSize);
+      chunks.push(chunk);
+    }
+    return chunks;
+  }
+  var CHUNKING_THRESHOLD = 65535;
+  function applyWithChunking(fn, argsArray) {
+    if (argsArray.length > CHUNKING_THRESHOLD) {
+      const chunks = splitToChunks(argsArray);
+      return fn(...chunks.map((chunk) => fn(...chunk)));
+    } else {
+      return fn(...argsArray);
+    }
+  }
+  function maxRank(graph) {
+    const nodes = graph.nodes();
+    const nodeRanks = nodes.map((v2) => {
+      const rank2 = graph.node(v2).rank;
+      if (rank2 === void 0) {
+        return Number.MIN_VALUE;
+      }
+      return rank2;
+    });
+    return applyWithChunking(Math.max, nodeRanks);
+  }
+  function partition(collection, fn) {
+    const result = { lhs: [], rhs: [] };
+    collection.forEach((value) => {
+      if (fn(value)) {
+        result.lhs.push(value);
+      } else {
+        result.rhs.push(value);
+      }
+    });
     return result;
+  }
+  function time(name, fn) {
+    const start = Date.now();
+    try {
+      return fn();
+    } finally {
+      console.log(name + " time: " + (Date.now() - start) + "ms");
+    }
+  }
+  function notime(name, fn) {
+    return fn();
+  }
+  var idCounter = 0;
+  function uniqueId(prefix) {
+    const id = ++idCounter;
+    return prefix + ("" + id);
+  }
+  function range(start, limit, step = 1) {
+    if (limit == null) {
+      limit = start;
+      start = 0;
+    }
+    let endCon = (i) => i < limit;
+    if (step < 0) {
+      endCon = (i) => limit < i;
+    }
+    const range3 = [];
+    for (let i = start; endCon(i); i += step) {
+      range3.push(i);
+    }
+    return range3;
+  }
+  function pick(source, keys) {
+    const dest = {};
+    for (const key of keys) {
+      if (source[key] !== void 0) {
+        dest[key] = source[key];
+      }
+    }
+    return dest;
+  }
+  function mapValues(obj, funcOrProp) {
+    let func;
+    if (typeof funcOrProp === "string") {
+      func = (val) => val[funcOrProp];
+    } else {
+      func = funcOrProp;
+    }
+    return Object.entries(obj).reduce((acc, [k2, v2]) => {
+      acc[k2] = func(v2, k2);
+      return acc;
+    }, {});
+  }
+  function zipObject(props, values) {
+    return props.reduce((acc, key, i) => {
+      acc[key] = values[i];
+      return acc;
+    }, {});
+  }
+  var GRAPH_NODE = "\0";
+  function compareByOldOrder(oldNodes, nodeA, nodeB) {
+    var _a, _b, _c, _d, _e, _f;
+    if (!(oldNodes && nodeA && nodeB && nodeA.dummy === "edge" && nodeB.dummy === "edge" && nodeA.edgeObj && nodeB.edgeObj && oldNodes[nodeA.edgeObj.v] && oldNodes[nodeB.edgeObj.v] && oldNodes[nodeA.edgeObj.w] && oldNodes[nodeB.edgeObj.w])) {
+      return 0;
+    }
+    let isForward = true;
+    if (nodeA.edgeObj.w === nodeB.edgeObj.w) {
+      isForward = false;
+    }
+    const targetRank = isForward ? (_b = (_a = oldNodes[nodeA.edgeObj.v]) == null ? void 0 : _a.rank) != null ? _b : NaN + 1 : (_d = (_c = oldNodes[nodeA.edgeObj.w]) == null ? void 0 : _c.rank) != null ? _d : NaN - 1;
+    const oldA = Object.entries(oldNodes).find((n) => {
+      var _a2, _b2;
+      return ((_a2 = n[1].edgeObj) == null ? void 0 : _a2.v) === nodeA.edgeObj.v && ((_b2 = n[1].edgeObj) == null ? void 0 : _b2.w) === nodeA.edgeObj.w && n[1].rank === targetRank;
+    });
+    const oldB = Object.entries(oldNodes).find((n) => {
+      var _a2, _b2;
+      return ((_a2 = n[1].edgeObj) == null ? void 0 : _a2.v) === nodeB.edgeObj.v && ((_b2 = n[1].edgeObj) == null ? void 0 : _b2.w) === nodeB.edgeObj.w && n[1].rank === targetRank;
+    });
+    if (!oldA || !oldB) {
+      return 0;
+    }
+    const oldOrderA = (_e = oldA[1].order) != null ? _e : NaN;
+    const oldOrderB = (_f = oldB[1].order) != null ? _f : NaN;
+    return isNaN(oldOrderA - oldOrderB) ? 0 : oldOrderA - oldOrderB;
+  }
+
+  // lib/version.ts
+  var version = "3.1.3";
+
+  // lib/data/list.ts
+  var List = class {
+    constructor() {
+      __publicField(this, "_sentinel");
+      const sentinel = {};
+      sentinel._next = sentinel._prev = sentinel;
+      this._sentinel = sentinel;
+    }
+    dequeue() {
+      const sentinel = this._sentinel;
+      const entry = sentinel._prev;
+      if (entry !== sentinel) {
+        unlink(entry);
+        return entry;
+      }
+      return void 0;
+    }
+    enqueue(entry) {
+      const sentinel = this._sentinel;
+      if (entry._prev && entry._next) {
+        unlink(entry);
+      }
+      entry._next = sentinel._next;
+      sentinel._next._prev = entry;
+      sentinel._next = entry;
+      entry._prev = sentinel;
+    }
+    toString() {
+      const strs = [];
+      const sentinel = this._sentinel;
+      let curr = sentinel._prev;
+      while (curr !== sentinel) {
+        strs.push(JSON.stringify(curr, filterOutLinks));
+        curr = curr._prev;
+      }
+      return "[" + strs.join(", ") + "]";
+    }
   };
-  memoized.cache = new (memoize.Cache || MapCache);
-  return memoized;
-}
-
-// Expose `MapCache`.
-memoize.Cache = MapCache;
-
-module.exports = memoize;
-
-},{"./_MapCache":55}],266:[function(require,module,exports){
-var baseMerge = require('./_baseMerge'),
-    createAssigner = require('./_createAssigner');
-
-/**
- * This method is like `_.assign` except that it recursively merges own and
- * inherited enumerable string keyed properties of source objects into the
- * destination object. Source properties that resolve to `undefined` are
- * skipped if a destination value exists. Array and plain object properties
- * are merged recursively. Other objects and value types are overridden by
- * assignment. Source objects are applied from left to right. Subsequent
- * sources overwrite property assignments of previous sources.
- *
- * **Note:** This method mutates `object`.
- *
- * @static
- * @memberOf _
- * @since 0.5.0
- * @category Object
- * @param {Object} object The destination object.
- * @param {...Object} [sources] The source objects.
- * @returns {Object} Returns `object`.
- * @example
- *
- * var object = {
- *   'a': [{ 'b': 2 }, { 'd': 4 }]
- * };
- *
- * var other = {
- *   'a': [{ 'c': 3 }, { 'e': 5 }]
- * };
- *
- * _.merge(object, other);
- * // => { 'a': [{ 'b': 2, 'c': 3 }, { 'd': 4, 'e': 5 }] }
- */
-var merge = createAssigner(function(object, source, srcIndex) {
-  baseMerge(object, source, srcIndex);
-});
-
-module.exports = merge;
-
-},{"./_baseMerge":112,"./_createAssigner":147}],267:[function(require,module,exports){
-var baseExtremum = require('./_baseExtremum'),
-    baseLt = require('./_baseLt'),
-    identity = require('./identity');
-
-/**
- * Computes the minimum value of `array`. If `array` is empty or falsey,
- * `undefined` is returned.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Math
- * @param {Array} array The array to iterate over.
- * @returns {*} Returns the minimum value.
- * @example
- *
- * _.min([4, 2, 8, 6]);
- * // => 2
- *
- * _.min([]);
- * // => undefined
- */
-function min(array) {
-  return (array && array.length)
-    ? baseExtremum(array, identity, baseLt)
-    : undefined;
-}
-
-module.exports = min;
-
-},{"./_baseExtremum":83,"./_baseLt":108,"./identity":241}],268:[function(require,module,exports){
-var baseExtremum = require('./_baseExtremum'),
-    baseIteratee = require('./_baseIteratee'),
-    baseLt = require('./_baseLt');
-
-/**
- * This method is like `_.min` except that it accepts `iteratee` which is
- * invoked for each element in `array` to generate the criterion by which
- * the value is ranked. The iteratee is invoked with one argument: (value).
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Math
- * @param {Array} array The array to iterate over.
- * @param {Function} [iteratee=_.identity] The iteratee invoked per element.
- * @returns {*} Returns the minimum value.
- * @example
- *
- * var objects = [{ 'n': 1 }, { 'n': 2 }];
- *
- * _.minBy(objects, function(o) { return o.n; });
- * // => { 'n': 1 }
- *
- * // The `_.property` iteratee shorthand.
- * _.minBy(objects, 'n');
- * // => { 'n': 1 }
- */
-function minBy(array, iteratee) {
-  return (array && array.length)
-    ? baseExtremum(array, baseIteratee(iteratee, 2), baseLt)
-    : undefined;
-}
-
-module.exports = minBy;
-
-},{"./_baseExtremum":83,"./_baseIteratee":105,"./_baseLt":108}],269:[function(require,module,exports){
-/**
- * This method returns `undefined`.
- *
- * @static
- * @memberOf _
- * @since 2.3.0
- * @category Util
- * @example
- *
- * _.times(2, _.noop);
- * // => [undefined, undefined]
- */
-function noop() {
-  // No operation performed.
-}
-
-module.exports = noop;
-
-},{}],270:[function(require,module,exports){
-var root = require('./_root');
-
-/**
- * Gets the timestamp of the number of milliseconds that have elapsed since
- * the Unix epoch (1 January 1970 00:00:00 UTC).
- *
- * @static
- * @memberOf _
- * @since 2.4.0
- * @category Date
- * @returns {number} Returns the timestamp.
- * @example
- *
- * _.defer(function(stamp) {
- *   console.log(_.now() - stamp);
- * }, _.now());
- * // => Logs the number of milliseconds it took for the deferred invocation.
- */
-var now = function() {
-  return root.Date.now();
-};
-
-module.exports = now;
-
-},{"./_root":208}],271:[function(require,module,exports){
-var basePick = require('./_basePick'),
-    flatRest = require('./_flatRest');
-
-/**
- * Creates an object composed of the picked `object` properties.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Object
- * @param {Object} object The source object.
- * @param {...(string|string[])} [paths] The property paths to pick.
- * @returns {Object} Returns the new object.
- * @example
- *
- * var object = { 'a': 1, 'b': '2', 'c': 3 };
- *
- * _.pick(object, ['a', 'c']);
- * // => { 'a': 1, 'c': 3 }
- */
-var pick = flatRest(function(object, paths) {
-  return object == null ? {} : basePick(object, paths);
-});
-
-module.exports = pick;
-
-},{"./_basePick":115,"./_flatRest":157}],272:[function(require,module,exports){
-var baseProperty = require('./_baseProperty'),
-    basePropertyDeep = require('./_basePropertyDeep'),
-    isKey = require('./_isKey'),
-    toKey = require('./_toKey');
-
-/**
- * Creates a function that returns the value at `path` of a given object.
- *
- * @static
- * @memberOf _
- * @since 2.4.0
- * @category Util
- * @param {Array|string} path The path of the property to get.
- * @returns {Function} Returns the new accessor function.
- * @example
- *
- * var objects = [
- *   { 'a': { 'b': 2 } },
- *   { 'a': { 'b': 1 } }
- * ];
- *
- * _.map(objects, _.property('a.b'));
- * // => [2, 1]
- *
- * _.map(_.sortBy(objects, _.property(['a', 'b'])), 'a.b');
- * // => [1, 2]
- */
-function property(path) {
-  return isKey(path) ? baseProperty(toKey(path)) : basePropertyDeep(path);
-}
-
-module.exports = property;
-
-},{"./_baseProperty":117,"./_basePropertyDeep":118,"./_isKey":183,"./_toKey":223}],273:[function(require,module,exports){
-var createRange = require('./_createRange');
-
-/**
- * Creates an array of numbers (positive and/or negative) progressing from
- * `start` up to, but not including, `end`. A step of `-1` is used if a negative
- * `start` is specified without an `end` or `step`. If `end` is not specified,
- * it's set to `start` with `start` then set to `0`.
- *
- * **Note:** JavaScript follows the IEEE-754 standard for resolving
- * floating-point values which can produce unexpected results.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Util
- * @param {number} [start=0] The start of the range.
- * @param {number} end The end of the range.
- * @param {number} [step=1] The value to increment or decrement by.
- * @returns {Array} Returns the range of numbers.
- * @see _.inRange, _.rangeRight
- * @example
- *
- * _.range(4);
- * // => [0, 1, 2, 3]
- *
- * _.range(-4);
- * // => [0, -1, -2, -3]
- *
- * _.range(1, 5);
- * // => [1, 2, 3, 4]
- *
- * _.range(0, 20, 5);
- * // => [0, 5, 10, 15]
- *
- * _.range(0, -4, -1);
- * // => [0, -1, -2, -3]
- *
- * _.range(1, 4, 0);
- * // => [1, 1, 1]
- *
- * _.range(0);
- * // => []
- */
-var range = createRange();
-
-module.exports = range;
-
-},{"./_createRange":151}],274:[function(require,module,exports){
-var arrayReduce = require('./_arrayReduce'),
-    baseEach = require('./_baseEach'),
-    baseIteratee = require('./_baseIteratee'),
-    baseReduce = require('./_baseReduce'),
-    isArray = require('./isArray');
-
-/**
- * Reduces `collection` to a value which is the accumulated result of running
- * each element in `collection` thru `iteratee`, where each successive
- * invocation is supplied the return value of the previous. If `accumulator`
- * is not given, the first element of `collection` is used as the initial
- * value. The iteratee is invoked with four arguments:
- * (accumulator, value, index|key, collection).
- *
- * Many lodash methods are guarded to work as iteratees for methods like
- * `_.reduce`, `_.reduceRight`, and `_.transform`.
- *
- * The guarded methods are:
- * `assign`, `defaults`, `defaultsDeep`, `includes`, `merge`, `orderBy`,
- * and `sortBy`
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Collection
- * @param {Array|Object} collection The collection to iterate over.
- * @param {Function} [iteratee=_.identity] The function invoked per iteration.
- * @param {*} [accumulator] The initial value.
- * @returns {*} Returns the accumulated value.
- * @see _.reduceRight
- * @example
- *
- * _.reduce([1, 2], function(sum, n) {
- *   return sum + n;
- * }, 0);
- * // => 3
- *
- * _.reduce({ 'a': 1, 'b': 2, 'c': 1 }, function(result, value, key) {
- *   (result[value] || (result[value] = [])).push(key);
- *   return result;
- * }, {});
- * // => { '1': ['a', 'c'], '2': ['b'] } (iteration order is not guaranteed)
- */
-function reduce(collection, iteratee, accumulator) {
-  var func = isArray(collection) ? arrayReduce : baseReduce,
-      initAccum = arguments.length < 3;
-
-  return func(collection, baseIteratee(iteratee, 4), accumulator, initAccum, baseEach);
-}
-
-module.exports = reduce;
-
-},{"./_arrayReduce":71,"./_baseEach":82,"./_baseIteratee":105,"./_baseReduce":120,"./isArray":243}],275:[function(require,module,exports){
-var baseKeys = require('./_baseKeys'),
-    getTag = require('./_getTag'),
-    isArrayLike = require('./isArrayLike'),
-    isString = require('./isString'),
-    stringSize = require('./_stringSize');
-
-/** `Object#toString` result references. */
-var mapTag = '[object Map]',
-    setTag = '[object Set]';
-
-/**
- * Gets the size of `collection` by returning its length for array-like
- * values or the number of own enumerable string keyed properties for objects.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Collection
- * @param {Array|Object|string} collection The collection to inspect.
- * @returns {number} Returns the collection size.
- * @example
- *
- * _.size([1, 2, 3]);
- * // => 3
- *
- * _.size({ 'a': 1, 'b': 2 });
- * // => 2
- *
- * _.size('pebbles');
- * // => 7
- */
-function size(collection) {
-  if (collection == null) {
-    return 0;
+  function unlink(entry) {
+    entry._prev._next = entry._next;
+    entry._next._prev = entry._prev;
+    delete entry._next;
+    delete entry._prev;
   }
-  if (isArrayLike(collection)) {
-    return isString(collection) ? stringSize(collection) : collection.length;
-  }
-  var tag = getTag(collection);
-  if (tag == mapTag || tag == setTag) {
-    return collection.size;
-  }
-  return baseKeys(collection).length;
-}
-
-module.exports = size;
-
-},{"./_baseKeys":106,"./_getTag":168,"./_stringSize":221,"./isArrayLike":244,"./isString":255}],276:[function(require,module,exports){
-var baseFlatten = require('./_baseFlatten'),
-    baseOrderBy = require('./_baseOrderBy'),
-    baseRest = require('./_baseRest'),
-    isIterateeCall = require('./_isIterateeCall');
-
-/**
- * Creates an array of elements, sorted in ascending order by the results of
- * running each element in a collection thru each iteratee. This method
- * performs a stable sort, that is, it preserves the original sort order of
- * equal elements. The iteratees are invoked with one argument: (value).
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Collection
- * @param {Array|Object} collection The collection to iterate over.
- * @param {...(Function|Function[])} [iteratees=[_.identity]]
- *  The iteratees to sort by.
- * @returns {Array} Returns the new sorted array.
- * @example
- *
- * var users = [
- *   { 'user': 'fred',   'age': 48 },
- *   { 'user': 'barney', 'age': 36 },
- *   { 'user': 'fred',   'age': 40 },
- *   { 'user': 'barney', 'age': 34 }
- * ];
- *
- * _.sortBy(users, [function(o) { return o.user; }]);
- * // => objects for [['barney', 36], ['barney', 34], ['fred', 48], ['fred', 40]]
- *
- * _.sortBy(users, ['user', 'age']);
- * // => objects for [['barney', 34], ['barney', 36], ['fred', 40], ['fred', 48]]
- */
-var sortBy = baseRest(function(collection, iteratees) {
-  if (collection == null) {
-    return [];
-  }
-  var length = iteratees.length;
-  if (length > 1 && isIterateeCall(collection, iteratees[0], iteratees[1])) {
-    iteratees = [];
-  } else if (length > 2 && isIterateeCall(iteratees[0], iteratees[1], iteratees[2])) {
-    iteratees = [iteratees[0]];
-  }
-  return baseOrderBy(collection, baseFlatten(iteratees, 1), []);
-});
-
-module.exports = sortBy;
-
-},{"./_baseFlatten":86,"./_baseOrderBy":114,"./_baseRest":121,"./_isIterateeCall":182}],277:[function(require,module,exports){
-/**
- * This method returns a new empty array.
- *
- * @static
- * @memberOf _
- * @since 4.13.0
- * @category Util
- * @returns {Array} Returns the new empty array.
- * @example
- *
- * var arrays = _.times(2, _.stubArray);
- *
- * console.log(arrays);
- * // => [[], []]
- *
- * console.log(arrays[0] === arrays[1]);
- * // => false
- */
-function stubArray() {
-  return [];
-}
-
-module.exports = stubArray;
-
-},{}],278:[function(require,module,exports){
-/**
- * This method returns `false`.
- *
- * @static
- * @memberOf _
- * @since 4.13.0
- * @category Util
- * @returns {boolean} Returns `false`.
- * @example
- *
- * _.times(2, _.stubFalse);
- * // => [false, false]
- */
-function stubFalse() {
-  return false;
-}
-
-module.exports = stubFalse;
-
-},{}],279:[function(require,module,exports){
-var toNumber = require('./toNumber');
-
-/** Used as references for various `Number` constants. */
-var INFINITY = 1 / 0,
-    MAX_INTEGER = 1.7976931348623157e+308;
-
-/**
- * Converts `value` to a finite number.
- *
- * @static
- * @memberOf _
- * @since 4.12.0
- * @category Lang
- * @param {*} value The value to convert.
- * @returns {number} Returns the converted number.
- * @example
- *
- * _.toFinite(3.2);
- * // => 3.2
- *
- * _.toFinite(Number.MIN_VALUE);
- * // => 5e-324
- *
- * _.toFinite(Infinity);
- * // => 1.7976931348623157e+308
- *
- * _.toFinite('3.2');
- * // => 3.2
- */
-function toFinite(value) {
-  if (!value) {
-    return value === 0 ? value : 0;
-  }
-  value = toNumber(value);
-  if (value === INFINITY || value === -INFINITY) {
-    var sign = (value < 0 ? -1 : 1);
-    return sign * MAX_INTEGER;
-  }
-  return value === value ? value : 0;
-}
-
-module.exports = toFinite;
-
-},{"./toNumber":281}],280:[function(require,module,exports){
-var toFinite = require('./toFinite');
-
-/**
- * Converts `value` to an integer.
- *
- * **Note:** This method is loosely based on
- * [`ToInteger`](http://www.ecma-international.org/ecma-262/7.0/#sec-tointeger).
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to convert.
- * @returns {number} Returns the converted integer.
- * @example
- *
- * _.toInteger(3.2);
- * // => 3
- *
- * _.toInteger(Number.MIN_VALUE);
- * // => 0
- *
- * _.toInteger(Infinity);
- * // => 1.7976931348623157e+308
- *
- * _.toInteger('3.2');
- * // => 3
- */
-function toInteger(value) {
-  var result = toFinite(value),
-      remainder = result % 1;
-
-  return result === result ? (remainder ? result - remainder : result) : 0;
-}
-
-module.exports = toInteger;
-
-},{"./toFinite":279}],281:[function(require,module,exports){
-var isObject = require('./isObject'),
-    isSymbol = require('./isSymbol');
-
-/** Used as references for various `Number` constants. */
-var NAN = 0 / 0;
-
-/** Used to match leading and trailing whitespace. */
-var reTrim = /^\s+|\s+$/g;
-
-/** Used to detect bad signed hexadecimal string values. */
-var reIsBadHex = /^[-+]0x[0-9a-f]+$/i;
-
-/** Used to detect binary string values. */
-var reIsBinary = /^0b[01]+$/i;
-
-/** Used to detect octal string values. */
-var reIsOctal = /^0o[0-7]+$/i;
-
-/** Built-in method references without a dependency on `root`. */
-var freeParseInt = parseInt;
-
-/**
- * Converts `value` to a number.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to process.
- * @returns {number} Returns the number.
- * @example
- *
- * _.toNumber(3.2);
- * // => 3.2
- *
- * _.toNumber(Number.MIN_VALUE);
- * // => 5e-324
- *
- * _.toNumber(Infinity);
- * // => Infinity
- *
- * _.toNumber('3.2');
- * // => 3.2
- */
-function toNumber(value) {
-  if (typeof value == 'number') {
-    return value;
-  }
-  if (isSymbol(value)) {
-    return NAN;
-  }
-  if (isObject(value)) {
-    var other = typeof value.valueOf == 'function' ? value.valueOf() : value;
-    value = isObject(other) ? (other + '') : other;
-  }
-  if (typeof value != 'string') {
-    return value === 0 ? value : +value;
-  }
-  value = value.replace(reTrim, '');
-  var isBinary = reIsBinary.test(value);
-  return (isBinary || reIsOctal.test(value))
-    ? freeParseInt(value.slice(2), isBinary ? 2 : 8)
-    : (reIsBadHex.test(value) ? NAN : +value);
-}
-
-module.exports = toNumber;
-
-},{"./isObject":251,"./isSymbol":256}],282:[function(require,module,exports){
-var copyObject = require('./_copyObject'),
-    keysIn = require('./keysIn');
-
-/**
- * Converts `value` to a plain object flattening inherited enumerable string
- * keyed properties of `value` to own properties of the plain object.
- *
- * @static
- * @memberOf _
- * @since 3.0.0
- * @category Lang
- * @param {*} value The value to convert.
- * @returns {Object} Returns the converted plain object.
- * @example
- *
- * function Foo() {
- *   this.b = 2;
- * }
- *
- * Foo.prototype.c = 3;
- *
- * _.assign({ 'a': 1 }, new Foo);
- * // => { 'a': 1, 'b': 2 }
- *
- * _.assign({ 'a': 1 }, _.toPlainObject(new Foo));
- * // => { 'a': 1, 'b': 2, 'c': 3 }
- */
-function toPlainObject(value) {
-  return copyObject(value, keysIn(value));
-}
-
-module.exports = toPlainObject;
-
-},{"./_copyObject":143,"./keysIn":260}],283:[function(require,module,exports){
-var baseToString = require('./_baseToString');
-
-/**
- * Converts `value` to a string. An empty string is returned for `null`
- * and `undefined` values. The sign of `-0` is preserved.
- *
- * @static
- * @memberOf _
- * @since 4.0.0
- * @category Lang
- * @param {*} value The value to convert.
- * @returns {string} Returns the converted string.
- * @example
- *
- * _.toString(null);
- * // => ''
- *
- * _.toString(-0);
- * // => '-0'
- *
- * _.toString([1, 2, 3]);
- * // => '1,2,3'
- */
-function toString(value) {
-  return value == null ? '' : baseToString(value);
-}
-
-module.exports = toString;
-
-},{"./_baseToString":126}],284:[function(require,module,exports){
-var arrayEach = require('./_arrayEach'),
-    baseCreate = require('./_baseCreate'),
-    baseForOwn = require('./_baseForOwn'),
-    baseIteratee = require('./_baseIteratee'),
-    getPrototype = require('./_getPrototype'),
-    isArray = require('./isArray'),
-    isBuffer = require('./isBuffer'),
-    isFunction = require('./isFunction'),
-    isObject = require('./isObject'),
-    isTypedArray = require('./isTypedArray');
-
-/**
- * An alternative to `_.reduce`; this method transforms `object` to a new
- * `accumulator` object which is the result of running each of its own
- * enumerable string keyed properties thru `iteratee`, with each invocation
- * potentially mutating the `accumulator` object. If `accumulator` is not
- * provided, a new object with the same `[[Prototype]]` will be used. The
- * iteratee is invoked with four arguments: (accumulator, value, key, object).
- * Iteratee functions may exit iteration early by explicitly returning `false`.
- *
- * @static
- * @memberOf _
- * @since 1.3.0
- * @category Object
- * @param {Object} object The object to iterate over.
- * @param {Function} [iteratee=_.identity] The function invoked per iteration.
- * @param {*} [accumulator] The custom accumulator value.
- * @returns {*} Returns the accumulated value.
- * @example
- *
- * _.transform([2, 3, 4], function(result, n) {
- *   result.push(n *= n);
- *   return n % 2 == 0;
- * }, []);
- * // => [4, 9]
- *
- * _.transform({ 'a': 1, 'b': 2, 'c': 1 }, function(result, value, key) {
- *   (result[value] || (result[value] = [])).push(key);
- * }, {});
- * // => { '1': ['a', 'c'], '2': ['b'] }
- */
-function transform(object, iteratee, accumulator) {
-  var isArr = isArray(object),
-      isArrLike = isArr || isBuffer(object) || isTypedArray(object);
-
-  iteratee = baseIteratee(iteratee, 4);
-  if (accumulator == null) {
-    var Ctor = object && object.constructor;
-    if (isArrLike) {
-      accumulator = isArr ? new Ctor : [];
+  function filterOutLinks(k2, v2) {
+    if (k2 !== "_next" && k2 !== "_prev") {
+      return v2;
     }
-    else if (isObject(object)) {
-      accumulator = isFunction(Ctor) ? baseCreate(getPrototype(object)) : {};
+    return void 0;
+  }
+  var list_default = List;
+
+  // lib/greedy-fas.ts
+  var DEFAULT_WEIGHT_FN = () => 1;
+  function greedyFAS(graph, weightFn) {
+    if (graph.nodeCount() <= 1) {
+      return [];
     }
-    else {
-      accumulator = {};
+    const state = buildState(graph, weightFn || DEFAULT_WEIGHT_FN);
+    const results = doGreedyFAS(state.graph, state.buckets, state.zeroIdx);
+    return results.flatMap((edge) => graph.outEdges(edge.v, edge.w) || []);
+  }
+  function doGreedyFAS(g, buckets, zeroIdx) {
+    var _a;
+    let results = [];
+    const sources = buckets[buckets.length - 1];
+    const sinks = buckets[0];
+    let entry;
+    while (g.nodeCount()) {
+      while (entry = sinks.dequeue()) {
+        removeNode(g, buckets, zeroIdx, entry);
+      }
+      while (entry = sources.dequeue()) {
+        removeNode(g, buckets, zeroIdx, entry);
+      }
+      if (g.nodeCount()) {
+        for (let i = buckets.length - 2; i > 0; --i) {
+          entry = (_a = buckets[i]) == null ? void 0 : _a.dequeue();
+          if (entry) {
+            results = results.concat(removeNode(g, buckets, zeroIdx, entry, true) || []);
+            break;
+          }
+        }
+      }
+    }
+    return results;
+  }
+  function removeNode(graph, buckets, zeroIdx, entry, collectPredecessors) {
+    const collected = [];
+    const results = collectPredecessors ? collected : void 0;
+    (graph.inEdges(entry.v) || []).forEach((edge) => {
+      const weight = graph.edge(edge);
+      const uEntry = graph.node(edge.v);
+      if (collectPredecessors) {
+        collected.push({ v: edge.v, w: edge.w });
+      }
+      uEntry.out -= weight;
+      assignBucket(buckets, zeroIdx, uEntry);
+    });
+    (graph.outEdges(entry.v) || []).forEach((edge) => {
+      const weight = graph.edge(edge);
+      const w2 = edge.w;
+      const wEntry = graph.node(w2);
+      wEntry.in -= weight;
+      assignBucket(buckets, zeroIdx, wEntry);
+    });
+    graph.removeNode(entry.v);
+    return results;
+  }
+  function buildState(graph, weightFn) {
+    const fasGraph = new Graph();
+    let maxIn = 0;
+    let maxOut = 0;
+    graph.nodes().forEach((v2) => {
+      fasGraph.setNode(v2, { v: v2, in: 0, out: 0 });
+    });
+    graph.edges().forEach((edge) => {
+      const prevWeight = fasGraph.edge(edge.v, edge.w) || 0;
+      const weight = weightFn(edge);
+      const edgeWeight = prevWeight + weight;
+      fasGraph.setEdge(edge.v, edge.w, edgeWeight);
+      const vNode = fasGraph.node(edge.v);
+      const wNode = fasGraph.node(edge.w);
+      maxOut = Math.max(maxOut, vNode.out += weight);
+      maxIn = Math.max(maxIn, wNode.in += weight);
+    });
+    const buckets = range2(maxOut + maxIn + 3).map(() => new list_default());
+    const zeroIdx = maxIn + 1;
+    fasGraph.nodes().forEach((v2) => {
+      assignBucket(buckets, zeroIdx, fasGraph.node(v2));
+    });
+    return { graph: fasGraph, buckets, zeroIdx };
+  }
+  function assignBucket(buckets, zeroIdx, entry) {
+    var _a, _b, _c;
+    if (!entry.out) {
+      (_a = buckets[0]) == null ? void 0 : _a.enqueue(entry);
+    } else if (!entry.in) {
+      (_b = buckets[buckets.length - 1]) == null ? void 0 : _b.enqueue(entry);
+    } else {
+      (_c = buckets[entry.out - entry.in + zeroIdx]) == null ? void 0 : _c.enqueue(entry);
     }
   }
-  (isArrLike ? arrayEach : baseForOwn)(object, function(value, index, object) {
-    return iteratee(accumulator, value, index, object);
-  });
-  return accumulator;
-}
+  function range2(limit) {
+    const range3 = [];
+    for (let i = 0; i < limit; i++) {
+      range3.push(i);
+    }
+    return range3;
+  }
 
-module.exports = transform;
+  // lib/acyclic.ts
+  function run(graph, oldGraph) {
+    const fas = graph.graph().acyclicer === "greedy" ? greedyFAS(graph, weightFn(graph)) : dfsFAS(graph, oldGraph != null ? oldGraph : null);
+    fas.forEach((e) => {
+      const label = graph.edge(e);
+      graph.removeEdge(e);
+      label.forwardName = e.name;
+      label.reversed = true;
+      graph.setEdge(e.w, e.v, label, uniqueId("rev"));
+    });
+    function weightFn(g) {
+      return (e) => {
+        return g.edge(e).weight;
+      };
+    }
+  }
+  function dfsFAS(graph, oldGraph) {
+    const fas = [];
+    const stack = {};
+    const visited = {};
+    function dfs2(v2) {
+      if (Object.hasOwn(visited, v2)) {
+        return;
+      }
+      visited[v2] = true;
+      stack[v2] = true;
+      graph.outEdges(v2).forEach((e) => {
+        if (Object.hasOwn(stack, e.w)) {
+          fas.push(e);
+        } else {
+          dfs2(e.w);
+        }
+      });
+      delete stack[v2];
+    }
+    function dfsDynamic(v2) {
+      var _a;
+      if (Object.hasOwn(visited, v2)) {
+        return;
+      }
+      visited[v2] = true;
+      stack[v2] = true;
+      (_a = graph.outEdges(v2)) == null ? void 0 : _a.forEach((e) => {
+        var _a2, _b;
+        if (Object.hasOwn(stack, e.w) || ((_a2 = oldGraph.node(v2)) == null ? void 0 : _a2.rank) > ((_b = oldGraph.node(e.w)) == null ? void 0 : _b.rank) && isReachedFromStartWithoutEdge(graph, e.w, e)) {
+          fas.push(e);
+        } else {
+          dfsDynamic(e.w);
+        }
+      });
+      delete stack[v2];
+    }
+    let dfsFn = dfs2;
+    if (oldGraph && typeof oldGraph.node === "function") {
+      dfsFn = dfsDynamic;
+    }
+    graph.sources().forEach(dfsFn);
+    graph.nodes().forEach(dfsFn);
+    return fas;
+  }
+  function undo(graph) {
+    graph.edges().forEach((e) => {
+      const label = graph.edge(e);
+      if (label.reversed) {
+        graph.removeEdge(e);
+        const forwardName = label.forwardName;
+        delete label.reversed;
+        delete label.forwardName;
+        graph.setEdge(e.w, e.v, label, forwardName);
+      }
+    });
+  }
+  function isReachedFromStartWithoutEdge(graph, node, ignoreEdge) {
+    const localVisited = /* @__PURE__ */ new Set();
+    function reverseDfs(v2) {
+      var _a;
+      if (graph.sources().includes(v2)) {
+        return true;
+      }
+      localVisited.add(v2);
+      for (const e of (_a = graph.inEdges(v2)) != null ? _a : []) {
+        if (!(e.v === ignoreEdge.v && e.w === ignoreEdge.w) && !localVisited.has(e.v)) {
+          if (reverseDfs(e.v)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+    return reverseDfs(node);
+  }
 
-},{"./_arrayEach":64,"./_baseCreate":81,"./_baseForOwn":88,"./_baseIteratee":105,"./_getPrototype":164,"./isArray":243,"./isBuffer":246,"./isFunction":248,"./isObject":251,"./isTypedArray":257}],285:[function(require,module,exports){
-var baseFlatten = require('./_baseFlatten'),
-    baseRest = require('./_baseRest'),
-    baseUniq = require('./_baseUniq'),
-    isArrayLikeObject = require('./isArrayLikeObject');
+  // lib/normalize.ts
+  function run2(graph) {
+    graph.graph().dummyChains = [];
+    graph.edges().forEach((edge) => normalizeEdge(graph, edge));
+  }
+  function normalizeEdge(graph, e) {
+    let v2 = e.v;
+    let vRank = graph.node(v2).rank;
+    const w2 = e.w;
+    const wRank = graph.node(w2).rank;
+    const name = e.name;
+    const edgeLabel = graph.edge(e);
+    const labelRank = edgeLabel.labelRank;
+    if (wRank === vRank + 1) return;
+    graph.removeEdge(e);
+    let dummy;
+    let attrs;
+    let i;
+    for (i = 0, ++vRank; vRank < wRank; ++i, ++vRank) {
+      edgeLabel.points = [];
+      attrs = {
+        width: 0,
+        height: 0,
+        edgeLabel,
+        edgeObj: e,
+        rank: vRank
+      };
+      dummy = addDummyNode(graph, "edge", attrs, "_d");
+      if (vRank === labelRank) {
+        attrs.width = edgeLabel.width;
+        attrs.height = edgeLabel.height;
+        attrs.dummy = "edge-label";
+        attrs.labelpos = edgeLabel.labelpos;
+      }
+      graph.setEdge(v2, dummy, { weight: edgeLabel.weight }, name);
+      if (i === 0) {
+        graph.graph().dummyChains.push(dummy);
+      }
+      v2 = dummy;
+    }
+    graph.setEdge(v2, w2, { weight: edgeLabel.weight }, name);
+  }
+  function undo2(graph) {
+    graph.graph().dummyChains.forEach((v2) => {
+      let node = graph.node(v2);
+      const origLabel = node.edgeLabel;
+      let w2;
+      graph.setEdge(node.edgeObj, origLabel);
+      while (node.dummy) {
+        w2 = graph.successors(v2)[0];
+        graph.removeNode(v2);
+        origLabel.points.push({ x: node.x, y: node.y });
+        if (node.dummy === "edge-label") {
+          origLabel.x = node.x;
+          origLabel.y = node.y;
+          origLabel.width = node.width;
+          origLabel.height = node.height;
+        }
+        v2 = w2;
+        node = graph.node(v2);
+      }
+    });
+  }
 
-/**
- * Creates an array of unique values, in order, from all given arrays using
- * [`SameValueZero`](http://ecma-international.org/ecma-262/7.0/#sec-samevaluezero)
- * for equality comparisons.
- *
- * @static
- * @memberOf _
- * @since 0.1.0
- * @category Array
- * @param {...Array} [arrays] The arrays to inspect.
- * @returns {Array} Returns the new array of combined values.
- * @example
- *
- * _.union([2], [1, 2]);
- * // => [2, 1]
- */
-var union = baseRest(function(arrays) {
-  return baseUniq(baseFlatten(arrays, 1, isArrayLikeObject, true));
-});
+  // lib/rank/util.ts
+  function longestPath(graph) {
+    const visited = {};
+    function dfs2(v2) {
+      const label = graph.node(v2);
+      if (Object.hasOwn(visited, v2)) {
+        return label.rank;
+      }
+      visited[v2] = true;
+      const outEdges = graph.outEdges(v2);
+      const outEdgesMinLens = outEdges ? outEdges.map((e) => {
+        if (e == null) {
+          return Number.POSITIVE_INFINITY;
+        }
+        return dfs2(e.w) - graph.edge(e).minlen;
+      }) : [];
+      let rank2 = applyWithChunking(Math.min, outEdgesMinLens);
+      if (rank2 === Number.POSITIVE_INFINITY) {
+        rank2 = 0;
+      }
+      return label.rank = rank2;
+    }
+    graph.sources().forEach(dfs2);
+  }
+  function slack(graph, edge) {
+    return graph.node(edge.w).rank - graph.node(edge.v).rank - graph.edge(edge).minlen;
+  }
 
-module.exports = union;
+  // lib/rank/feasible-tree.ts
+  var feasible_tree_default = feasibleTree;
+  function feasibleTree(graph) {
+    const tree = new Graph({ directed: false });
+    const nodes = graph.nodes();
+    if (nodes.length === 0) {
+      throw new Error("Graph must have at least one node");
+    }
+    const start = nodes[0];
+    const size = graph.nodeCount();
+    tree.setNode(start, {});
+    let edge;
+    let delta;
+    while (tightTree(tree, graph) < size) {
+      edge = findMinSlackEdge(tree, graph);
+      if (!edge) break;
+      delta = tree.hasNode(edge.v) ? slack(graph, edge) : -slack(graph, edge);
+      shiftRanks(tree, graph, delta);
+    }
+    return tree;
+  }
+  function tightTree(tree, graph) {
+    function dfs2(v2) {
+      const nodeEdges = graph.nodeEdges(v2);
+      if (nodeEdges) {
+        nodeEdges.forEach((e) => {
+          const edgeV = e.v;
+          const w2 = v2 === edgeV ? e.w : edgeV;
+          if (!tree.hasNode(w2) && !slack(graph, e)) {
+            tree.setNode(w2, {});
+            tree.setEdge(v2, w2, {});
+            dfs2(w2);
+          }
+        });
+      }
+    }
+    tree.nodes().forEach(dfs2);
+    return tree.nodeCount();
+  }
+  function findMinSlackEdge(tree, graph) {
+    const edges = graph.edges();
+    return edges.reduce((acc, edge) => {
+      let edgeSlack = Number.POSITIVE_INFINITY;
+      if (tree.hasNode(edge.v) !== tree.hasNode(edge.w)) {
+        edgeSlack = slack(graph, edge);
+      }
+      if (edgeSlack < acc[0]) {
+        return [edgeSlack, edge];
+      }
+      return acc;
+    }, [Number.POSITIVE_INFINITY, null])[1];
+  }
+  function shiftRanks(tree, graph, delta) {
+    tree.nodes().forEach((v2) => graph.node(v2).rank += delta);
+  }
 
-},{"./_baseFlatten":86,"./_baseRest":121,"./_baseUniq":128,"./isArrayLikeObject":245}],286:[function(require,module,exports){
-var toString = require('./toString');
+  // lib/rank/network-simplex.ts
+  var { preorder, postorder } = F;
+  var network_simplex_default = networkSimplex;
+  networkSimplex.initLowLimValues = initLowLimValues;
+  networkSimplex.initCutValues = initCutValues;
+  networkSimplex.calcCutValue = calcCutValue;
+  networkSimplex.leaveEdge = leaveEdge;
+  networkSimplex.enterEdge = enterEdge;
+  networkSimplex.exchangeEdges = exchangeEdges;
+  function networkSimplex(graph) {
+    graph = simplify(graph);
+    longestPath(graph);
+    const t = feasible_tree_default(graph);
+    initLowLimValues(t);
+    initCutValues(t, graph);
+    let e;
+    let f;
+    while (e = leaveEdge(t)) {
+      f = enterEdge(t, graph, e);
+      exchangeEdges(t, graph, e, f);
+    }
+  }
+  function initCutValues(tree, graph) {
+    let visitedNodes = postorder(tree, tree.nodes());
+    visitedNodes = visitedNodes.slice(0, visitedNodes.length - 1);
+    visitedNodes.forEach((v2) => assignCutValue(tree, graph, v2));
+  }
+  function assignCutValue(tree, graph, child) {
+    const childLab = tree.node(child);
+    const parent = childLab.parent;
+    const edge = tree.edge(child, parent);
+    edge.cutvalue = calcCutValue(tree, graph, child);
+  }
+  function calcCutValue(tree, graph, child) {
+    const childLab = tree.node(child);
+    const parent = childLab.parent;
+    let childIsTail = true;
+    let graphEdge = graph.edge(child, parent);
+    let cutValue = 0;
+    if (!graphEdge) {
+      childIsTail = false;
+      graphEdge = graph.edge(parent, child);
+    }
+    cutValue = graphEdge.weight;
+    const nodeEdges = graph.nodeEdges(child);
+    if (nodeEdges) {
+      nodeEdges.forEach((edge) => {
+        const isOutEdge = edge.v === child;
+        const other = isOutEdge ? edge.w : edge.v;
+        if (other !== parent) {
+          const pointsToHead = isOutEdge === childIsTail;
+          const otherWeight = graph.edge(edge).weight;
+          cutValue += pointsToHead ? otherWeight : -otherWeight;
+          if (isTreeEdge(tree, child, other)) {
+            const treeEdge = tree.edge(child, other);
+            const otherCutValue = treeEdge.cutvalue;
+            cutValue += pointsToHead ? -otherCutValue : otherCutValue;
+          }
+        }
+      });
+    }
+    return cutValue;
+  }
+  function initLowLimValues(tree, root) {
+    if (arguments.length < 2) {
+      root = tree.nodes()[0];
+    }
+    dfsAssignLowLim(tree, {}, 1, root);
+  }
+  function dfsAssignLowLim(tree, visited, nextLim, v2, parent) {
+    const low = nextLim;
+    const label = tree.node(v2);
+    visited[v2] = true;
+    const neighbors = tree.neighbors(v2);
+    if (neighbors) {
+      neighbors.forEach((w2) => {
+        if (!Object.hasOwn(visited, w2)) {
+          nextLim = dfsAssignLowLim(tree, visited, nextLim, w2, v2);
+        }
+      });
+    }
+    label.low = low;
+    label.lim = nextLim++;
+    if (parent) {
+      label.parent = parent;
+    } else {
+      delete label.parent;
+    }
+    return nextLim;
+  }
+  function leaveEdge(tree) {
+    return tree.edges().find((e) => {
+      const edge = tree.edge(e);
+      return edge.cutvalue < 0;
+    });
+  }
+  function enterEdge(tree, graph, edge) {
+    let v2 = edge.v;
+    let w2 = edge.w;
+    if (!graph.hasEdge(v2, w2)) {
+      v2 = edge.w;
+      w2 = edge.v;
+    }
+    const vLabel = tree.node(v2);
+    const wLabel = tree.node(w2);
+    let tailLabel = vLabel;
+    let flip = false;
+    if (vLabel.lim > wLabel.lim) {
+      tailLabel = wLabel;
+      flip = true;
+    }
+    const candidates = graph.edges().filter((edge2) => {
+      return flip === isDescendant(tree, tree.node(edge2.v), tailLabel) && flip !== isDescendant(tree, tree.node(edge2.w), tailLabel);
+    });
+    return candidates.reduce((acc, edge2) => {
+      if (slack(graph, edge2) < slack(graph, acc)) {
+        return edge2;
+      }
+      return acc;
+    });
+  }
+  function exchangeEdges(t, g, e, f) {
+    const v2 = e.v;
+    const w2 = e.w;
+    t.removeEdge(v2, w2);
+    t.setEdge(f.v, f.w, {});
+    initLowLimValues(t);
+    initCutValues(t, g);
+    updateRanks(t, g);
+  }
+  function updateRanks(t, g) {
+    const root = t.nodes().find((v2) => {
+      const node = t.node(v2);
+      return !node.parent;
+    });
+    if (!root) return;
+    let vs = preorder(t, [root]);
+    vs = vs.slice(1);
+    vs.forEach((v2) => {
+      const treeNode = t.node(v2);
+      const parent = treeNode.parent;
+      let edge = g.edge(v2, parent);
+      let flipped = false;
+      if (!edge) {
+        edge = g.edge(parent, v2);
+        flipped = true;
+      }
+      g.node(v2).rank = g.node(parent).rank + (flipped ? edge.minlen : -edge.minlen);
+    });
+  }
+  function isTreeEdge(tree, u, v2) {
+    return tree.hasEdge(u, v2);
+  }
+  function isDescendant(tree, vLabel, rootLabel) {
+    return rootLabel.low <= vLabel.lim && vLabel.lim <= rootLabel.lim;
+  }
 
-/** Used to generate unique IDs. */
-var idCounter = 0;
+  // lib/rank/index.ts
+  var rank_default = rank;
+  function rank(graph) {
+    const ranker = graph.graph().ranker;
+    if (typeof ranker === "function") {
+      return ranker(graph);
+    }
+    switch (ranker) {
+      case "network-simplex":
+        networkSimplexRanker(graph);
+        break;
+      case "tight-tree":
+        tightTreeRanker(graph);
+        break;
+      case "longest-path":
+        longestPathRanker(graph);
+        break;
+      case "none":
+        break;
+      default:
+        networkSimplexRanker(graph);
+    }
+  }
+  var longestPathRanker = longestPath;
+  function tightTreeRanker(g) {
+    longestPath(g);
+    feasible_tree_default(g);
+  }
+  function networkSimplexRanker(g) {
+    network_simplex_default(g);
+  }
 
-/**
- * Generates a unique ID. If `prefix` is given, the ID is appended to it.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Util
- * @param {string} [prefix=''] The value to prefix the ID with.
- * @returns {string} Returns the unique ID.
- * @example
- *
- * _.uniqueId('contact_');
- * // => 'contact_104'
- *
- * _.uniqueId();
- * // => '105'
- */
-function uniqueId(prefix) {
-  var id = ++idCounter;
-  return toString(prefix) + id;
-}
+  // lib/parent-dummy-chains.ts
+  var parent_dummy_chains_default = parentDummyChains;
+  function parentDummyChains(graph) {
+    const postorderNums = postorder2(graph);
+    const graphData = graph.graph();
+    if (!Array.isArray(graphData.dummyChains)) return;
+    const dummyChains = graphData.dummyChains;
+    dummyChains.forEach((v2) => {
+      let node = graph.node(v2);
+      const edgeObj = node.edgeObj;
+      const pathData = findPath(graph, postorderNums, edgeObj.v, edgeObj.w);
+      const path = pathData.path;
+      const lca = pathData.lca;
+      let pathIdx = 0;
+      let pathV = path[pathIdx];
+      let ascending = true;
+      while (v2 !== edgeObj.w) {
+        node = graph.node(v2);
+        if (ascending) {
+          while ((pathV = path[pathIdx]) !== lca && graph.node(pathV).maxRank < node.rank) {
+            pathIdx++;
+          }
+          if (pathV === lca) {
+            ascending = false;
+          }
+        }
+        if (!ascending) {
+          while (pathIdx < path.length - 1 && graph.node(path[pathIdx + 1]).minRank <= node.rank) {
+            pathIdx++;
+          }
+          pathV = path[pathIdx];
+        }
+        if (pathV !== void 0) {
+          graph.setParent(v2, pathV);
+        }
+        v2 = graph.successors(v2)[0];
+      }
+    });
+  }
+  function findPath(graph, postorderNums, v2, w2) {
+    const vPath = [];
+    const wPath = [];
+    const low = Math.min(postorderNums[v2].low, postorderNums[w2].low);
+    const lim = Math.max(postorderNums[v2].lim, postorderNums[w2].lim);
+    let parent;
+    parent = v2;
+    do {
+      parent = graph.parent(parent);
+      vPath.push(parent);
+    } while (parent && (postorderNums[parent].low > low || lim > postorderNums[parent].lim));
+    const lca = parent;
+    let wParent = w2;
+    while ((wParent = graph.parent(wParent)) !== lca) {
+      wPath.push(wParent);
+    }
+    return { path: vPath.concat(wPath.reverse()), lca };
+  }
+  function postorder2(graph) {
+    const result = {};
+    let lim = 0;
+    function dfs2(v2) {
+      const low = lim;
+      graph.children(v2).forEach(dfs2);
+      result[v2] = { low, lim: lim++ };
+    }
+    graph.children(GRAPH_NODE).forEach(dfs2);
+    return result;
+  }
 
-module.exports = uniqueId;
+  // lib/nesting-graph.ts
+  function run3(graph) {
+    const root = addDummyNode(graph, "root", {}, "_root");
+    const depths = treeDepths(graph);
+    const depthsArr = Object.values(depths);
+    const height = applyWithChunking(Math.max, depthsArr) - 1;
+    const nodeSep = 2 * height + 1;
+    graph.graph().nestingRoot = root;
+    graph.edges().forEach((e) => graph.edge(e).minlen *= nodeSep);
+    const weight = sumWeights(graph) + 1;
+    graph.children(GRAPH_NODE).forEach((child) => {
+      dfs(graph, root, nodeSep, weight, height, depths, child);
+    });
+    graph.graph().nodeRankFactor = nodeSep;
+  }
+  function dfs(graph, root, nodeSep, weight, height, depths, v2) {
+    var _a;
+    const children = graph.children(v2);
+    if (!children.length) {
+      if (v2 !== root) {
+        graph.setEdge(root, v2, { weight: 0, minlen: nodeSep });
+      }
+      return;
+    }
+    const top = addBorderNode(graph, "_bt");
+    const bottom = addBorderNode(graph, "_bb");
+    const label = graph.node(v2);
+    graph.setParent(top, v2);
+    label.borderTop = top;
+    graph.setParent(bottom, v2);
+    label.borderBottom = bottom;
+    children.forEach((child) => {
+      var _a2;
+      dfs(graph, root, nodeSep, weight, height, depths, child);
+      const childNode = graph.node(child);
+      const childTop = childNode.borderTop ? childNode.borderTop : child;
+      const childBottom = childNode.borderBottom ? childNode.borderBottom : child;
+      const thisWeight = childNode.borderTop ? weight : 2 * weight;
+      const minlen = childTop !== childBottom ? 1 : height - ((_a2 = depths[v2]) != null ? _a2 : 0) + 1;
+      graph.setEdge(top, childTop, {
+        weight: thisWeight,
+        minlen,
+        nestingEdge: true
+      });
+      graph.setEdge(childBottom, bottom, {
+        weight: thisWeight,
+        minlen,
+        nestingEdge: true
+      });
+    });
+    if (!graph.parent(v2)) {
+      graph.setEdge(root, top, { weight: 0, minlen: height + ((_a = depths[v2]) != null ? _a : 0) });
+    }
+  }
+  function treeDepths(graph) {
+    const depths = {};
+    function dfs2(v2, depth) {
+      const children = graph.children(v2);
+      if (children && children.length) {
+        children.forEach((child) => dfs2(child, depth + 1));
+      }
+      depths[v2] = depth;
+    }
+    graph.children(GRAPH_NODE).forEach((v2) => dfs2(v2, 1));
+    return depths;
+  }
+  function sumWeights(graph) {
+    return graph.edges().reduce((acc, e) => acc + graph.edge(e).weight, 0);
+  }
+  function cleanup(graph) {
+    const graphLabel = graph.graph();
+    graph.removeNode(graphLabel.nestingRoot);
+    delete graphLabel.nestingRoot;
+    graph.edges().forEach((e) => {
+      const edge = graph.edge(e);
+      if (edge.nestingEdge) {
+        graph.removeEdge(e);
+      }
+    });
+  }
 
-},{"./toString":283}],287:[function(require,module,exports){
-var baseValues = require('./_baseValues'),
-    keys = require('./keys');
+  // lib/add-border-segments.ts
+  var add_border_segments_default = addBorderSegments;
+  function addBorderSegments(graph) {
+    function dfs2(v2) {
+      const children = graph.children(v2);
+      const node = graph.node(v2);
+      if (children.length) {
+        children.forEach(dfs2);
+      }
+      if (node && Object.hasOwn(node, "minRank")) {
+        node.borderLeft = [];
+        node.borderRight = [];
+        for (let rank2 = node.minRank, maxRank2 = node.maxRank + 1; rank2 < maxRank2; ++rank2) {
+          addBorderNode2(graph, "borderLeft", "_bl", v2, node, rank2);
+          addBorderNode2(graph, "borderRight", "_br", v2, node, rank2);
+        }
+      }
+    }
+    graph.children(GRAPH_NODE).forEach(dfs2);
+  }
+  function addBorderNode2(graph, prop, prefix, sg, sgNode, rank2) {
+    const label = { width: 0, height: 0, rank: rank2, borderType: prop };
+    const prev = sgNode[prop][rank2 - 1];
+    const curr = addDummyNode(graph, "border", label, prefix);
+    sgNode[prop][rank2] = curr;
+    graph.setParent(curr, sg);
+    if (prev) {
+      graph.setEdge(prev, curr, { weight: 1 });
+    }
+  }
 
-/**
- * Creates an array of the own enumerable string keyed property values of `object`.
- *
- * **Note:** Non-object values are coerced to objects.
- *
- * @static
- * @since 0.1.0
- * @memberOf _
- * @category Object
- * @param {Object} object The object to query.
- * @returns {Array} Returns the array of property values.
- * @example
- *
- * function Foo() {
- *   this.a = 1;
- *   this.b = 2;
- * }
- *
- * Foo.prototype.c = 3;
- *
- * _.values(new Foo);
- * // => [1, 2] (iteration order is not guaranteed)
- *
- * _.values('hi');
- * // => ['h', 'i']
- */
-function values(object) {
-  return object == null ? [] : baseValues(object, keys(object));
-}
+  // lib/coordinate-system.ts
+  function adjust(graph) {
+    var _a;
+    const rankDir = (_a = graph.graph().rankdir) == null ? void 0 : _a.toLowerCase();
+    if (rankDir === "lr" || rankDir === "rl") {
+      swapWidthHeight(graph);
+    }
+  }
+  function undo3(graph) {
+    var _a;
+    const rankDir = (_a = graph.graph().rankdir) == null ? void 0 : _a.toLowerCase();
+    if (rankDir === "bt" || rankDir === "rl") {
+      reverseY(graph);
+    }
+    if (rankDir === "lr" || rankDir === "rl") {
+      swapXY(graph);
+      swapWidthHeight(graph);
+    }
+  }
+  function swapWidthHeight(graph) {
+    graph.nodes().forEach((node) => swapWidthHeightOne(graph.node(node)));
+    graph.edges().forEach((edge) => swapWidthHeightOne(graph.edge(edge)));
+  }
+  function swapWidthHeightOne(attrs) {
+    const w2 = attrs.width;
+    attrs.width = attrs.height;
+    attrs.height = w2;
+  }
+  function reverseY(graph) {
+    graph.nodes().forEach((node) => reverseYOne(graph.node(node)));
+    graph.edges().forEach((edge) => {
+      var _a;
+      const edgeLabel = graph.edge(edge);
+      (_a = edgeLabel.points) == null ? void 0 : _a.forEach(reverseYOne);
+      if (Object.hasOwn(edgeLabel, "y")) {
+        reverseYOne(edgeLabel);
+      }
+    });
+  }
+  function reverseYOne(attrs) {
+    attrs.y = -attrs.y;
+  }
+  function swapXY(graph) {
+    graph.nodes().forEach((node) => swapXYOne(graph.node(node)));
+    graph.edges().forEach((edge) => {
+      var _a;
+      const edgeLabel = graph.edge(edge);
+      (_a = edgeLabel.points) == null ? void 0 : _a.forEach(swapXYOne);
+      if (Object.hasOwn(edgeLabel, "x")) {
+        swapXYOne(edgeLabel);
+      }
+    });
+  }
+  function swapXYOne(attrs) {
+    const x2 = attrs.x;
+    attrs.x = attrs.y;
+    attrs.y = x2;
+  }
 
-module.exports = values;
+  // lib/order/init-order.ts
+  function initOrder(graph, oldNodes = null) {
+    const visited = {};
+    const simpleNodes = graph.nodes().filter((v2) => !graph.children(v2).length);
+    const simpleNodesRanks = simpleNodes.map((v2) => graph.node(v2).rank);
+    const maxRank2 = applyWithChunking(Math.max, simpleNodesRanks);
+    const layers = range(maxRank2 + 1).map(() => []);
+    function dfs2(v2) {
+      if (visited[v2]) return;
+      visited[v2] = true;
+      const node = graph.node(v2);
+      layers[node.rank].push(v2);
+      const successors = graph.successors(v2);
+      if (successors) {
+        const sortedSuccessors = [...successors].sort((a, b2) => compareOldOrder(a, b2));
+        sortedSuccessors.forEach(dfs2);
+      }
+    }
+    const orderedVs = simpleNodes.sort((a, b2) => graph.node(a).rank - graph.node(b2).rank);
+    orderedVs.forEach(dfs2);
+    function compareOldOrder(a, b2) {
+      const nodeA = graph.node(a);
+      const nodeB = graph.node(b2);
+      return compareByOldOrder(oldNodes, nodeA, nodeB);
+    }
+    return layers;
+  }
 
-},{"./_baseValues":129,"./keys":259}],288:[function(require,module,exports){
-var assignValue = require('./_assignValue'),
-    baseZipObject = require('./_baseZipObject');
+  // lib/order/cross-count.ts
+  function crossCount(graph, layering) {
+    let cc = 0;
+    for (let i = 1; i < layering.length; ++i) {
+      cc += twoLayerCrossCount(graph, layering[i - 1], layering[i]);
+    }
+    return cc;
+  }
+  function twoLayerCrossCount(graph, northLayer, southLayer) {
+    const southPos = zipObject(southLayer, southLayer.map((v2, i) => i));
+    const southEntries = northLayer.flatMap((v2) => {
+      const edges = graph.outEdges(v2);
+      if (!edges) return [];
+      return edges.map((e) => {
+        return { pos: southPos[e.w], weight: graph.edge(e).weight };
+      }).sort((a, b2) => a.pos - b2.pos);
+    });
+    let firstIndex = 1;
+    while (firstIndex < southLayer.length) firstIndex <<= 1;
+    const treeSize = 2 * firstIndex - 1;
+    firstIndex -= 1;
+    const tree = new Array(treeSize).fill(0);
+    let cc = 0;
+    southEntries.forEach((entry) => {
+      let index = entry.pos + firstIndex;
+      tree[index] += entry.weight;
+      let weightSum = 0;
+      while (index > 0) {
+        if (index % 2) {
+          weightSum += tree[index + 1];
+        }
+        index = index - 1 >> 1;
+        tree[index] += entry.weight;
+      }
+      cc += entry.weight * weightSum;
+    });
+    return cc;
+  }
 
-/**
- * This method is like `_.fromPairs` except that it accepts two arrays,
- * one of property identifiers and one of corresponding values.
- *
- * @static
- * @memberOf _
- * @since 0.4.0
- * @category Array
- * @param {Array} [props=[]] The property identifiers.
- * @param {Array} [values=[]] The property values.
- * @returns {Object} Returns the new object.
- * @example
- *
- * _.zipObject(['a', 'b'], [1, 2]);
- * // => { 'a': 1, 'b': 2 }
- */
-function zipObject(props, values) {
-  return baseZipObject(props || [], values || [], assignValue);
-}
+  // lib/order/barycenter.ts
+  function barycenter(graph, movable = []) {
+    return movable.map((v2) => {
+      const inV = graph.inEdges(v2);
+      if (!inV || !inV.length) {
+        return { v: v2 };
+      } else {
+        const result = inV.reduce((acc, e) => {
+          const edge = graph.edge(e);
+          const nodeU = graph.node(e.v);
+          return {
+            sum: acc.sum + edge.weight * nodeU.order,
+            weight: acc.weight + edge.weight
+          };
+        }, { sum: 0, weight: 0 });
+        return {
+          v: v2,
+          barycenter: result.sum / result.weight,
+          weight: result.weight
+        };
+      }
+    });
+  }
 
-module.exports = zipObject;
+  // lib/order/resolve-conflicts.ts
+  function resolveConflicts(entries, constraintGraph) {
+    const mappedEntries = {};
+    entries.forEach((entry, i) => {
+      const tmp = {
+        indegree: 0,
+        "in": [],
+        out: [],
+        vs: [entry.v],
+        i
+      };
+      if (entry.barycenter !== void 0) {
+        tmp.barycenter = entry.barycenter;
+        tmp.weight = entry.weight;
+      }
+      mappedEntries[entry.v] = tmp;
+    });
+    constraintGraph.edges().forEach((e) => {
+      const entryV = mappedEntries[e.v];
+      const entryW = mappedEntries[e.w];
+      if (entryV !== void 0 && entryW !== void 0) {
+        entryW.indegree++;
+        entryV.out.push(entryW);
+      }
+    });
+    const sourceSet = Object.values(mappedEntries).filter((entry) => !entry.indegree);
+    return doResolveConflicts(sourceSet);
+  }
+  function doResolveConflicts(sourceSet) {
+    const entries = [];
+    function handleIn(vEntry) {
+      return (uEntry) => {
+        if (uEntry.merged) {
+          return;
+        }
+        if (uEntry.barycenter === void 0 || vEntry.barycenter === void 0 || uEntry.barycenter >= vEntry.barycenter) {
+          mergeEntries(vEntry, uEntry);
+        }
+      };
+    }
+    function handleOut(vEntry) {
+      return (wEntry) => {
+        wEntry["in"].push(vEntry);
+        if (--wEntry.indegree === 0) {
+          sourceSet.push(wEntry);
+        }
+      };
+    }
+    while (sourceSet.length) {
+      const entry = sourceSet.pop();
+      entries.push(entry);
+      entry["in"].reverse().forEach(handleIn(entry));
+      entry.out.forEach(handleOut(entry));
+    }
+    return entries.filter((entry) => !entry.merged).map((entry) => {
+      return pick(entry, ["vs", "i", "barycenter", "weight"]);
+    });
+  }
+  function mergeEntries(target, source) {
+    let sum = 0;
+    let weight = 0;
+    if (target.weight) {
+      sum += target.barycenter * target.weight;
+      weight += target.weight;
+    }
+    if (source.weight) {
+      sum += source.barycenter * source.weight;
+      weight += source.weight;
+    }
+    target.vs = source.vs.concat(target.vs);
+    target.barycenter = sum / weight;
+    target.weight = weight;
+    target.i = Math.min(source.i, target.i);
+    source.merged = true;
+  }
 
-},{"./_assignValue":75,"./_baseZipObject":130}]},{},[1])(1)
-});
+  // lib/order/sort.ts
+  function sort(entries, reversedPairs, oldNodes, graph, biasRight) {
+    let resolvedReversedPairs = {};
+    let resolvedOldNodes = null;
+    let resolvedGraph = null;
+    let resolvedBiasRight = biasRight;
+    if (typeof reversedPairs === "boolean") {
+      resolvedBiasRight = reversedPairs;
+      resolvedReversedPairs = {};
+    } else if (reversedPairs) {
+      resolvedReversedPairs = reversedPairs;
+      resolvedOldNodes = oldNodes != null ? oldNodes : null;
+      resolvedGraph = graph != null ? graph : null;
+    }
+    const parts = partition(entries, (entry) => {
+      return Object.hasOwn(entry, "barycenter");
+    });
+    const sortable = parts.lhs;
+    const unsortable = parts.rhs.sort((a, b2) => b2.i - a.i);
+    const vs = [];
+    let sum = 0;
+    let weight = 0;
+    let vsIndex = 0;
+    sortable.sort(compareWithOldOrder(resolvedGraph, resolvedOldNodes, !!resolvedBiasRight));
+    for (const [key, value] of Object.entries(resolvedReversedPairs)) {
+      const keyIndex = sortable.findIndex((entry) => entry.vs[0] === key);
+      sortable.splice(keyIndex + 1, 0, value);
+    }
+    vsIndex = consumeUnsortable(vs, unsortable, vsIndex);
+    sortable.forEach((entry) => {
+      vsIndex += entry.vs.length;
+      vs.push(entry.vs);
+      sum += entry.barycenter * entry.weight;
+      weight += entry.weight;
+      vsIndex = consumeUnsortable(vs, unsortable, vsIndex);
+    });
+    const result = { vs: vs.flat(1) };
+    if (weight) {
+      result.barycenter = sum / weight;
+      result.weight = weight;
+    }
+    return result;
+  }
+  function consumeUnsortable(vs, unsortable, index) {
+    let last;
+    while (unsortable.length && (last = unsortable[unsortable.length - 1]).i <= index) {
+      unsortable.pop();
+      vs.push(last.vs);
+      index++;
+    }
+    return index;
+  }
+  function compareWithOldOrder(graph, oldNodes, bias) {
+    return (entryV, entryW) => {
+      if (entryV.barycenter < entryW.barycenter) {
+        return -1;
+      } else if (entryV.barycenter > entryW.barycenter) {
+        return 1;
+      }
+      if (graph && (typeof entryV.vs[0] === "string" || typeof entryW.vs[0] === "string")) {
+        const nodeV = graph.node(entryV.vs[0]);
+        const nodeW = graph.node(entryW.vs[0]);
+        const byOldOrder = compareByOldOrder(oldNodes, nodeV, nodeW);
+        if (byOldOrder !== 0) {
+          return byOldOrder;
+        }
+      }
+      return !bias ? entryV.i - entryW.i : entryW.i - entryV.i;
+    };
+  }
+
+  // lib/order/sort-subgraph.ts
+  function sortSubgraph(graph, v2, constraintGraph, oldNodes, biasRight) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k;
+    let resolvedOldNodes = null;
+    let resolvedBiasRight = biasRight;
+    if (typeof oldNodes === "boolean") {
+      resolvedBiasRight = oldNodes;
+      resolvedOldNodes = null;
+    } else if (oldNodes !== void 0) {
+      resolvedOldNodes = oldNodes;
+    }
+    let movable = graph.children(v2);
+    const node = graph.node(v2);
+    const bl = node ? node.borderLeft : void 0;
+    const br = node ? node.borderRight : void 0;
+    const subgraphs = {};
+    if (bl) {
+      movable = movable.filter((w2) => w2 !== bl && w2 !== br);
+    }
+    const barycenters = barycenter(graph, movable);
+    barycenters.forEach((entry) => {
+      if (graph.children(entry.v).length) {
+        const { result: subgraphResult } = sortSubgraph(graph, entry.v, constraintGraph, resolvedOldNodes, resolvedBiasRight);
+        subgraphs[entry.v] = subgraphResult;
+        if (Object.hasOwn(subgraphResult, "barycenter")) {
+          mergeBarycenters(entry, subgraphResult);
+        }
+      }
+    });
+    const entries = resolveConflicts(barycenters, constraintGraph);
+    expandSubgraphs(entries, subgraphs);
+    const reversedPairs = {};
+    let usedBias = false;
+    for (let i = 0; i < entries.length; i++) {
+      for (let j2 = i + 1; j2 < entries.length; j2++) {
+        if (!entries[i] || !entries[j2] || !((_a = entries[i]) == null ? void 0 : _a.barycenter) || !((_b = entries[j2]) == null ? void 0 : _b.barycenter)) {
+          continue;
+        }
+        if (((_c = entries[i]) == null ? void 0 : _c.barycenter) === entries[j2].barycenter) {
+          const nameI = (_e = (_d = entries[i]) == null ? void 0 : _d.vs[0]) != null ? _e : "";
+          const nameJ = (_g = (_f = entries[j2]) == null ? void 0 : _f.vs[0]) != null ? _g : "";
+          const nodeI = graph.node(nameI);
+          const nodeJ = graph.node(nameJ);
+          if (nodeI.dummy === "edge" && nodeJ.dummy === "edge" && ((_h = nodeI.edgeObj) == null ? void 0 : _h.v) === ((_i = nodeJ.edgeObj) == null ? void 0 : _i.v) && ((_j = nodeI.edgeObj) == null ? void 0 : _j.w) === ((_k = nodeJ.edgeObj) == null ? void 0 : _k.w)) {
+            if (nodeI.edgeLabel.reversed) {
+              reversedPairs[nameJ] = entries[i];
+              entries.splice(i, 1);
+              i--;
+              break;
+            } else if (!reversedPairs[nameI]) {
+              reversedPairs[nameI] = entries[j2];
+              entries.splice(j2, 1);
+              j2--;
+            }
+          } else {
+            usedBias = true;
+          }
+        }
+      }
+    }
+    const result = sort(entries, reversedPairs, resolvedOldNodes, graph, resolvedBiasRight);
+    if (bl && br) {
+      result.vs = [bl, result.vs, br].flat(1);
+      const blPredecessors = graph.predecessors(bl);
+      if (blPredecessors && blPredecessors.length) {
+        const blPred = graph.node(blPredecessors[0]);
+        const brPredecessors = graph.predecessors(br);
+        const brPred = graph.node(brPredecessors[0]);
+        if (!Object.hasOwn(result, "barycenter")) {
+          result.barycenter = 0;
+          result.weight = 0;
+        }
+        result.barycenter = (result.barycenter * result.weight + blPred.order + brPred.order) / (result.weight + 2);
+        result.weight += 2;
+      }
+    }
+    Object.defineProperty(result, "result", { value: result, enumerable: false, configurable: true, writable: true });
+    Object.defineProperty(result, "usedBias", { value: usedBias, enumerable: false, configurable: true, writable: true });
+    return result;
+  }
+  function expandSubgraphs(entries, subgraphs) {
+    entries.forEach((entry) => {
+      entry.vs = entry.vs.flatMap((v2) => {
+        if (subgraphs[v2]) {
+          return subgraphs[v2].vs;
+        }
+        return v2;
+      });
+    });
+  }
+  function mergeBarycenters(target, other) {
+    if (target.barycenter !== void 0) {
+      target.barycenter = (target.barycenter * target.weight + other.barycenter * other.weight) / (target.weight + other.weight);
+      target.weight += other.weight;
+    } else {
+      target.barycenter = other.barycenter;
+      target.weight = other.weight;
+    }
+  }
+
+  // lib/order/build-layer-graph.ts
+  function buildLayerGraph(graph, rank2, relationship, nodesWithRank) {
+    if (!nodesWithRank) {
+      nodesWithRank = graph.nodes();
+    }
+    const root = createRootNode(graph);
+    const result = new Graph({ compound: true }).setGraph({ root }).setDefaultNodeLabel((v2) => graph.node(v2));
+    nodesWithRank.forEach((v2) => {
+      const node = graph.node(v2);
+      const parent = graph.parent(v2);
+      if (node.rank === rank2 || node.minRank <= rank2 && rank2 <= node.maxRank) {
+        result.setNode(v2);
+        result.setParent(v2, parent || root);
+        const edges = graph[relationship](v2);
+        if (edges) {
+          edges.forEach((e) => {
+            const u = e.v === v2 ? e.w : e.v;
+            const edge = result.edge(u, v2);
+            const weight = edge !== void 0 ? edge.weight : 0;
+            result.setEdge(u, v2, { weight: graph.edge(e).weight + weight });
+          });
+        }
+        if (Object.hasOwn(node, "minRank")) {
+          result.setNode(v2, {
+            borderLeft: node.borderLeft[rank2],
+            borderRight: node.borderRight[rank2]
+          });
+        }
+      }
+    });
+    return result;
+  }
+  function createRootNode(graph) {
+    let v2;
+    while (graph.hasNode(v2 = uniqueId("_root"))) ;
+    return v2;
+  }
+
+  // lib/order/add-subgraph-constraints.ts
+  function addSubgraphConstraints(graph, constraintGraph, vs) {
+    const prev = {};
+    let rootPrev;
+    vs.forEach((v2) => {
+      let child = graph.parent(v2);
+      let parent;
+      let prevChild;
+      while (child) {
+        parent = graph.parent(child);
+        if (parent) {
+          prevChild = prev[parent];
+          prev[parent] = child;
+        } else {
+          prevChild = rootPrev;
+          rootPrev = child;
+        }
+        if (prevChild && prevChild !== child) {
+          constraintGraph.setEdge(prevChild, child);
+          return;
+        }
+        child = parent;
+      }
+    });
+  }
+
+  // lib/order/index.ts
+  function order(graph, opts = {}, oldNodes = null) {
+    if (typeof opts.customOrder === "function") {
+      opts.customOrder(graph, order);
+      return;
+    }
+    const maxRank2 = maxRank(graph);
+    const downLayerGraphs = buildLayerGraphs(graph, range(1, maxRank2 + 1), "inEdges");
+    const upLayerGraphs = buildLayerGraphs(graph, range(maxRank2 - 1, -1, -1), "outEdges");
+    let layering = initOrder(graph, oldNodes);
+    assignOrder(graph, layering);
+    if (opts.disableOptimalOrderHeuristic) {
+      return;
+    }
+    let bestCC = Number.POSITIVE_INFINITY;
+    let best;
+    const constraints = opts.constraints || [];
+    for (let i = 0, lastBest = 0; lastBest < 4; ++i, ++lastBest) {
+      sweepLayerGraphs(i % 2 ? downLayerGraphs : upLayerGraphs, i % 4 >= 2, constraints, oldNodes);
+      layering = buildLayerMatrix(graph);
+      const cc = crossCount(graph, layering);
+      if (cc < bestCC) {
+        lastBest = 0;
+        best = Object.assign({}, layering);
+        bestCC = cc;
+      } else if (cc === bestCC) {
+        best = structuredClone(layering);
+      }
+    }
+    assignOrder(graph, best);
+  }
+  function buildLayerGraphs(graph, ranks, relationship) {
+    const nodesByRank = /* @__PURE__ */ new Map();
+    const addNodeToRank = (rank2, node) => {
+      if (!nodesByRank.has(rank2)) {
+        nodesByRank.set(rank2, []);
+      }
+      nodesByRank.get(rank2).push(node);
+    };
+    for (const v2 of graph.nodes()) {
+      const node = graph.node(v2);
+      if (typeof node.rank === "number") {
+        addNodeToRank(node.rank, v2);
+      }
+      if (typeof node.minRank === "number" && typeof node.maxRank === "number") {
+        for (let r = node.minRank; r <= node.maxRank; r++) {
+          if (r !== node.rank) {
+            addNodeToRank(r, v2);
+          }
+        }
+      }
+    }
+    return ranks.map(function(rank2) {
+      return buildLayerGraph(graph, rank2, relationship, nodesByRank.get(rank2) || []);
+    });
+  }
+  function sweepLayerGraphs(layerGraphs, switchBias, constraints, oldNodes) {
+    let biasRight = true;
+    const cg = new Graph();
+    layerGraphs.forEach(function(lg) {
+      constraints.forEach((con) => cg.setEdge(con.left, con.right));
+      const root = lg.graph().root;
+      const { result: sorted, usedBias } = sortSubgraph(lg, root, cg, oldNodes, biasRight);
+      if (switchBias && usedBias) {
+        biasRight = !biasRight;
+      }
+      sorted.vs.forEach((v2, i) => lg.node(v2).order = i);
+      addSubgraphConstraints(lg, cg, sorted.vs);
+    });
+  }
+  function assignOrder(graph, layering) {
+    Object.values(layering).forEach((layer) => layer.forEach((v2, i) => graph.node(v2).order = i));
+  }
+
+  // lib/position/bk.ts
+  function findType1Conflicts(graph, layering) {
+    const conflicts = {};
+    function visitLayer(prevLayer, layer) {
+      let k0 = 0, scanPos = 0;
+      const prevLayerLength = prevLayer.length, lastNode = layer[layer.length - 1];
+      layer.forEach((v2, i) => {
+        const w2 = findOtherInnerSegmentNode(graph, v2);
+        const k1 = w2 ? graph.node(w2).order : prevLayerLength;
+        if (w2 || v2 === lastNode) {
+          layer.slice(scanPos, i + 1).forEach((scanNode) => {
+            const preds = graph.predecessors(scanNode);
+            if (preds) {
+              preds.forEach((u) => {
+                const uLabel = graph.node(u);
+                const uPos = uLabel.order;
+                if ((uPos < k0 || k1 < uPos) && !(uLabel.dummy && graph.node(scanNode).dummy)) {
+                  addConflict(conflicts, u, scanNode);
+                }
+              });
+            }
+          });
+          scanPos = i + 1;
+          k0 = k1;
+        }
+      });
+      return layer;
+    }
+    if (layering.length) {
+      layering.reduce(visitLayer);
+    }
+    return conflicts;
+  }
+  function findType2Conflicts(graph, layering) {
+    const conflicts = {};
+    function isBorderDummy(v2) {
+      var _a;
+      return ((_a = graph.node(v2)) == null ? void 0 : _a.dummy) === "border";
+    }
+    const hasBorderDummy = graph.nodes().some(isBorderDummy);
+    if (!hasBorderDummy) {
+      return conflicts;
+    }
+    function scan(south, southPos, southEnd, prevNorthBorder, nextNorthBorder) {
+      range(southPos, southEnd).forEach((i) => {
+        const v2 = south[i];
+        if (v2 === void 0) return;
+        if (graph.node(v2).dummy) {
+          const preds = graph.predecessors(v2);
+          if (preds) {
+            preds.forEach((u) => {
+              if (u === void 0) return;
+              const uNode = graph.node(u);
+              if (uNode.dummy && (uNode.order < prevNorthBorder || uNode.order > nextNorthBorder)) {
+                addConflict(conflicts, u, v2);
+              }
+            });
+          }
+        }
+      });
+    }
+    function visitLayer(north, south) {
+      let prevNorthPos = -1;
+      let nextNorthPos = -1;
+      let southPos = 0;
+      south.forEach((v2, southLookahead) => {
+        if (isBorderDummy(v2)) {
+          const predecessors = graph.predecessors(v2);
+          if (predecessors && predecessors.length) {
+            const firstPred = predecessors[0];
+            if (firstPred === void 0) return;
+            nextNorthPos = graph.node(firstPred).order;
+            scan(south, southPos, southLookahead, prevNorthPos, nextNorthPos);
+            southPos = southLookahead;
+            prevNorthPos = nextNorthPos;
+          }
+        }
+        scan(south, southPos, south.length, nextNorthPos, north.length);
+      });
+      return south;
+    }
+    if (layering.length) {
+      layering.reduce(visitLayer);
+    }
+    return conflicts;
+  }
+  function findOtherInnerSegmentNode(graph, v2) {
+    if (graph.node(v2).dummy) {
+      const preds = graph.predecessors(v2);
+      if (preds) {
+        return preds.find((u) => graph.node(u).dummy);
+      }
+    }
+    return void 0;
+  }
+  function addConflict(conflicts, v2, w2) {
+    if (v2 > w2) {
+      const tmp = v2;
+      v2 = w2;
+      w2 = tmp;
+    }
+    let conflictsV = conflicts[v2];
+    if (!conflictsV) {
+      conflicts[v2] = conflictsV = {};
+    }
+    conflictsV[w2] = true;
+  }
+  function hasConflict(conflicts, v2, w2) {
+    if (v2 > w2) {
+      const tmp = v2;
+      v2 = w2;
+      w2 = tmp;
+    }
+    const conflictsV = conflicts[v2];
+    return conflictsV !== void 0 && Object.hasOwn(conflictsV, w2);
+  }
+  function verticalAlignment(graph, layering, conflicts, neighborFn, corePath) {
+    const root = {};
+    const align = {};
+    const pos = {};
+    layering.forEach((layer) => {
+      layer.forEach((v2, order2) => {
+        root[v2] = v2;
+        align[v2] = v2;
+        pos[v2] = order2;
+      });
+    });
+    layering.forEach((layer) => {
+      let prevIdx = -1;
+      let alreadyAlignedIndex = -1;
+      let hasShifted = false;
+      let modifiedLayer = layer;
+      const coreNodeIndex = layer.findIndex((v2) => {
+        return (corePath == null ? void 0 : corePath.includes(v2)) || isInCorePath(v2, graph, corePath);
+      });
+      if (coreNodeIndex > 0) {
+        modifiedLayer = [layer[coreNodeIndex], ...layer.slice(0, coreNodeIndex), ...layer.slice(coreNodeIndex + 1)];
+        hasShifted = true;
+      }
+      modifiedLayer.forEach((v2) => {
+        var _a;
+        let wsRaw = neighborFn(v2);
+        if (wsRaw && wsRaw.length) {
+          if (corePath == null ? void 0 : corePath.includes(v2)) {
+            wsRaw = wsRaw.filter((w2) => {
+              return isInCorePath(w2, graph, corePath);
+            });
+          }
+          const ws = wsRaw.sort((a, b2) => {
+            const posA = pos[a];
+            const posB = pos[b2];
+            return (posA !== void 0 ? posA : 0) - (posB !== void 0 ? posB : 0);
+          });
+          const mp = (ws.length - 1) / 2;
+          for (let i = Math.floor(mp), il = Math.ceil(mp); i <= il; ++i) {
+            const w2 = ws[i];
+            if (w2 === void 0) continue;
+            const posW = pos[w2];
+            if (posW !== void 0 && align[v2] === v2 && prevIdx < posW && pos[w2] !== alreadyAlignedIndex && !hasConflict(conflicts, v2, w2)) {
+              const rootW = root[w2];
+              if (rootW !== void 0) {
+                align[w2] = v2;
+                align[v2] = root[v2] = rootW;
+                prevIdx = posW;
+                if (hasShifted) {
+                  prevIdx = -1;
+                  alreadyAlignedIndex = (_a = pos[w2]) != null ? _a : -1;
+                  hasShifted = false;
+                }
+              }
+            }
+          }
+        }
+      });
+    });
+    return { root, align };
+  }
+  function horizontalCompaction(graph, layering, root, align, reverseSep = false) {
+    const xs = {};
+    const blockG = buildBlockGraph(graph, layering, root, reverseSep);
+    const borderType = reverseSep ? "borderLeft" : "borderRight";
+    function iterate(setXsFunc, nextNodesFunc) {
+      const stack = blockG.nodes().slice();
+      const visited = {};
+      let elem = stack.pop();
+      while (elem) {
+        if (visited[elem]) {
+          setXsFunc(elem);
+        } else {
+          visited[elem] = true;
+          stack.push(elem);
+          for (const nextElem of nextNodesFunc(elem)) {
+            stack.push(nextElem);
+          }
+        }
+        elem = stack.pop();
+      }
+    }
+    function pass1(elem) {
+      const inEdges = blockG.inEdges(elem);
+      if (inEdges) {
+        xs[elem] = inEdges.reduce((acc, e) => {
+          var _a;
+          const xsV = (_a = xs[e.v]) != null ? _a : 0;
+          const edgeWeight = blockG.edge(e);
+          return Math.max(acc, xsV + (edgeWeight !== void 0 ? edgeWeight : 0));
+        }, 0);
+      } else {
+        xs[elem] = 0;
+      }
+    }
+    function pass2(elem) {
+      const outEdges = blockG.outEdges(elem);
+      let min = Number.POSITIVE_INFINITY;
+      if (outEdges) {
+        min = outEdges.reduce((acc, e) => {
+          const xsW = xs[e.w];
+          const edgeWeight = blockG.edge(e);
+          return Math.min(acc, (xsW !== void 0 ? xsW : 0) - (edgeWeight !== void 0 ? edgeWeight : 0));
+        }, Number.POSITIVE_INFINITY);
+      }
+      const node = graph.node(elem);
+      if (min !== Number.POSITIVE_INFINITY && node.borderType !== borderType) {
+        xs[elem] = Math.max(xs[elem] !== void 0 ? xs[elem] : 0, min);
+      }
+    }
+    function predecessorsWrapper(elem) {
+      return blockG.predecessors(elem) || [];
+    }
+    function successorsWrapper(elem) {
+      return blockG.successors(elem) || [];
+    }
+    iterate(pass1, predecessorsWrapper);
+    iterate(pass2, successorsWrapper);
+    Object.keys(align).forEach((v2) => {
+      var _a;
+      const rootV = root[v2];
+      if (rootV !== void 0) {
+        xs[v2] = (_a = xs[rootV]) != null ? _a : 0;
+      }
+    });
+    return xs;
+  }
+  function buildBlockGraph(graph, layering, root, reverseSep) {
+    const blockGraph = new Graph();
+    const graphLabel = graph.graph();
+    const sepFn = sep(graphLabel.nodesep, graphLabel.edgesep, reverseSep);
+    layering.forEach((layer) => {
+      let u;
+      layer.forEach((v2) => {
+        const vRoot = root[v2];
+        if (vRoot !== void 0) {
+          blockGraph.setNode(vRoot);
+          if (u !== void 0) {
+            const uRoot = root[u];
+            if (uRoot !== void 0) {
+              const prevMax = blockGraph.edge(uRoot, vRoot);
+              blockGraph.setEdge(uRoot, vRoot, Math.max(sepFn(graph, v2, u), prevMax || 0));
+            }
+          }
+          u = v2;
+        }
+      });
+    });
+    return blockGraph;
+  }
+  function findSmallestWidthAlignment(graph, xss) {
+    return Object.values(xss).reduce((currentMinAndXs, xs) => {
+      let max = Number.NEGATIVE_INFINITY;
+      let min = Number.POSITIVE_INFINITY;
+      Object.entries(xs).forEach(([v2, x2]) => {
+        const halfWidth = width(graph, v2) / 2;
+        max = Math.max(x2 + halfWidth, max);
+        min = Math.min(x2 - halfWidth, min);
+      });
+      const newMin = max - min;
+      if (newMin < currentMinAndXs[0]) {
+        currentMinAndXs = [newMin, xs];
+      }
+      return currentMinAndXs;
+    }, [Number.POSITIVE_INFINITY, null])[1];
+  }
+  function alignCoordinates(xss, alignTo) {
+    const alignToVals = Object.values(alignTo);
+    const alignToMin = applyWithChunking(Math.min, alignToVals);
+    const alignToMax = applyWithChunking(Math.max, alignToVals);
+    ["u", "d"].forEach((vert) => {
+      ["l", "r"].forEach((horiz) => {
+        const alignment = vert + horiz;
+        const xs = xss[alignment];
+        if (!xs || xs === alignTo) return;
+        const xsVals = Object.values(xs);
+        let delta = alignToMin - applyWithChunking(Math.min, xsVals);
+        if (horiz !== "l") {
+          delta = alignToMax - applyWithChunking(Math.max, xsVals);
+        }
+        if (delta) {
+          xss[alignment] = mapValues(xs, (x2) => x2 + delta);
+        }
+      });
+    });
+  }
+  function balance(xss, align = void 0) {
+    const ulMap = xss.ul;
+    if (!ulMap) {
+      return {};
+    }
+    return mapValues(ulMap, (num, v2) => {
+      var _a, _b;
+      if (align) {
+        const alignmentKey = align.toLowerCase();
+        const alignment = xss[alignmentKey];
+        if (alignment && alignment[v2] !== void 0) {
+          return alignment[v2];
+        }
+      }
+      const xs = Object.values(xss).map((xs2) => {
+        const val = xs2[v2];
+        return val !== void 0 ? val : 0;
+      }).sort((a, b2) => a - b2);
+      return (((_a = xs[1]) != null ? _a : 0) + ((_b = xs[2]) != null ? _b : 0)) / 2;
+    });
+  }
+  function positionX(graph, corePath) {
+    const layering = buildLayerMatrix(graph);
+    const conflicts = Object.assign(
+      findType1Conflicts(graph, layering),
+      findType2Conflicts(graph, layering)
+    );
+    const xss = {};
+    let adjustedLayering;
+    ["u", "d"].forEach((vert) => {
+      adjustedLayering = vert === "u" ? layering : Object.values(layering).reverse();
+      ["l", "r"].forEach((horiz) => {
+        if (horiz === "r") {
+          adjustedLayering = adjustedLayering.map((inner) => {
+            return Object.values(inner).reverse();
+          });
+        }
+        const neighborFn = (v2) => {
+          const result = vert === "u" ? graph.predecessors(v2) : graph.successors(v2);
+          return result || [];
+        };
+        const align = verticalAlignment(graph, adjustedLayering, conflicts, neighborFn, corePath);
+        let xs = horizontalCompaction(
+          graph,
+          adjustedLayering,
+          align.root,
+          align.align,
+          horiz === "r"
+        );
+        if (horiz === "r") {
+          xs = mapValues(xs, (x2) => -x2);
+        }
+        xss[vert + horiz] = xs;
+      });
+    });
+    const smallestWidth = findSmallestWidthAlignment(graph, xss);
+    alignCoordinates(xss, smallestWidth);
+    return balance(xss, graph.graph().align);
+  }
+  function sep(nodeSep, edgeSep, reverseSep) {
+    return (g, v2, w2) => {
+      const vLabel = g.node(v2);
+      const wLabel = g.node(w2);
+      let sum = 0;
+      let delta;
+      sum += vLabel.width / 2;
+      if (Object.hasOwn(vLabel, "labelpos")) {
+        switch (vLabel.labelpos.toLowerCase()) {
+          case "l":
+            delta = -vLabel.width / 2;
+            break;
+          case "r":
+            delta = vLabel.width / 2;
+            break;
+        }
+      }
+      if (delta) {
+        sum += reverseSep ? delta : -delta;
+      }
+      delta = void 0;
+      sum += (vLabel.dummy ? edgeSep : nodeSep) / 2;
+      sum += (wLabel.dummy ? edgeSep : nodeSep) / 2;
+      sum += wLabel.width / 2;
+      if (Object.hasOwn(wLabel, "labelpos")) {
+        switch (wLabel.labelpos.toLowerCase()) {
+          case "l":
+            delta = wLabel.width / 2;
+            break;
+          case "r":
+            delta = -wLabel.width / 2;
+            break;
+        }
+      }
+      if (delta) {
+        sum += reverseSep ? delta : -delta;
+      }
+      return sum;
+    };
+  }
+  function width(graph, v2) {
+    return graph.node(v2).width;
+  }
+  function isInCorePath(v2, graph, corePath) {
+    var _a;
+    if (!corePath) return false;
+    const edge = (_a = graph.node(v2)) == null ? void 0 : _a.edgeObj;
+    if (!edge || graph.node(v2).edgeLabel.reversed) return false;
+    const sourceIndex = corePath.indexOf(edge == null ? void 0 : edge.v);
+    const targetIndex = corePath.indexOf(edge == null ? void 0 : edge.w);
+    return sourceIndex !== -1 && targetIndex !== -1 && sourceIndex === (targetIndex + 1) % corePath.length || sourceIndex === (targetIndex - 1) % corePath.length;
+  }
+
+  // lib/position/index.ts
+  function position(graph, corePath) {
+    graph = asNonCompoundGraph(graph);
+    positionY(graph);
+    Object.entries(positionX(graph, corePath)).forEach(([v2, x2]) => graph.node(v2).x = x2);
+  }
+  function positionY(graph) {
+    const layering = buildLayerMatrix(graph);
+    const graphLabel = graph.graph();
+    const rankSep = graphLabel.ranksep;
+    const rankAlign = graphLabel.rankalign;
+    let prevY = 0;
+    layering.forEach((layer) => {
+      const maxHeight = layer.reduce((acc, v2) => {
+        var _a;
+        const height = (_a = graph.node(v2).height) != null ? _a : 0;
+        if (acc > height) {
+          return acc;
+        } else {
+          return height;
+        }
+      }, 0);
+      layer.forEach((v2) => {
+        const node = graph.node(v2);
+        if (rankAlign === "top") {
+          node.y = prevY + node.height / 2;
+        } else if (rankAlign === "bottom") {
+          node.y = prevY + maxHeight - node.height / 2;
+        } else {
+          node.y = prevY + maxHeight / 2;
+        }
+      });
+      prevY += maxHeight + rankSep;
+    });
+  }
+
+  // lib/layout.ts
+  var previousLayouts = /* @__PURE__ */ new WeakMap();
+  function layout(g, opts = {}) {
+    recursiveClusterLayout(g, notime, opts);
+    return g;
+  }
+  function topLevelChildOf(g, node, cluster) {
+    let current = node;
+    while (current !== void 0) {
+      const parent = g.parent(current);
+      if (parent === cluster) return current;
+      current = parent;
+    }
+    return void 0;
+  }
+  function recursiveClusterLayout(g, time2, opts) {
+    var _a;
+    const clusterNodes = g.nodes().filter((v2) => g.children(v2).length);
+    const clusterBounds = {};
+    clusterNodes.forEach((v2) => {
+      const node = g.node(v2);
+      if (node && node.rankdir) {
+        const subgraph = new Graph({ multigraph: true, compound: true });
+        subgraph.setGraph({ rankdir: node.rankdir });
+        const children = g.children(v2);
+        children.forEach((childId) => {
+          const childNode = { ...g.node(childId) };
+          subgraph.setNode(childId, childNode);
+          const parent = g.parent(childId);
+          if (parent && parent !== v2 && children.includes(parent)) {
+            subgraph.setParent(childId, parent);
+          }
+        });
+        const proxiedEdges = /* @__PURE__ */ new Set();
+        g.edges().forEach((e) => {
+          const srcChild = topLevelChildOf(g, e.v, v2);
+          const tgtChild = topLevelChildOf(g, e.w, v2);
+          if (srcChild === e.v && tgtChild === e.w) {
+            subgraph.setEdge(e, { ...g.edge(e) });
+          } else if (srcChild && tgtChild && srcChild !== tgtChild) {
+            const key = `${srcChild}\0${tgtChild}`;
+            if (!proxiedEdges.has(key)) {
+              proxiedEdges.add(key);
+              subgraph.setEdge(srcChild, tgtChild, { ...g.edge(e) });
+            }
+          }
+        });
+        recursiveClusterLayout(subgraph, time2, opts);
+        const subLayoutG = buildLayoutGraph(subgraph);
+        runLayout(subLayoutG, time2, opts, null);
+        updateInputGraph(subgraph, subLayoutG);
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        subgraph.nodes().forEach((u) => {
+          if (u === v2) return;
+          const n = subgraph.node(u);
+          if (n && typeof n.x === "number" && typeof n.y === "number" && typeof n.width === "number" && typeof n.height === "number") {
+            minX = Math.min(minX, n.x - n.width / 2);
+            maxX = Math.max(maxX, n.x + n.width / 2);
+            minY = Math.min(minY, n.y - n.height / 2);
+            maxY = Math.max(maxY, n.y + n.height / 2);
+          }
+        });
+        if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+          minX = minY = 0;
+          maxX = maxY = 0;
+        }
+        const width2 = maxX - minX;
+        const height = maxY - minY;
+        clusterBounds[v2] = {
+          minX,
+          minY,
+          maxX,
+          maxY,
+          width: width2,
+          height,
+          offsetX: minX,
+          offsetY: minY
+        };
+        node._dagreClusterSubgraph = subgraph;
+      }
+    });
+    const isolatedClusters = [];
+    const getAllDescendants = (nodeId) => {
+      const result2 = [];
+      const queue = (g.children(nodeId) || []).filter((c) => c !== nodeId);
+      while (queue.length > 0) {
+        const curr = queue.shift();
+        result2.push(curr);
+        (g.children(curr) || []).filter((c) => c !== curr).forEach((c) => queue.push(c));
+      }
+      return result2;
+    };
+    const rawClusterMap = /* @__PURE__ */ new Map();
+    clusterNodes.forEach((v2) => {
+      const node = g.node(v2);
+      if (node && node.rankdir && clusterBounds[v2]) {
+        rawClusterMap.set(v2, (g.children(v2) || []).filter((c) => c !== v2));
+      }
+    });
+    const allDirectChildrenFlat = new Set([...rawClusterMap.values()].flat());
+    const clusterChildrenMap = /* @__PURE__ */ new Map();
+    rawClusterMap.forEach((_2, v2) => {
+      if (!allDirectChildrenFlat.has(v2)) {
+        clusterChildrenMap.set(v2, getAllDescendants(v2));
+      }
+    });
+    const allIsolatedChildren = new Set(
+      [...clusterChildrenMap.values()].flat()
+    );
+    const topLevelNode = (id) => {
+      for (const [cId, ch] of clusterChildrenMap) {
+        if (ch.includes(id)) return cId;
+      }
+      return id;
+    };
+    const allSavedEdges = [];
+    g.edges().forEach((e) => {
+      if (allIsolatedChildren.has(e.v) || allIsolatedChildren.has(e.w)) {
+        allSavedEdges.push({ edge: e, label: g.edge(e) });
+      }
+    });
+    const savedParents = /* @__PURE__ */ new Map();
+    allIsolatedChildren.forEach((id) => {
+      const p2 = g.parent(id);
+      savedParents.set(id, typeof p2 === "string" ? p2 : void 0);
+    });
+    clusterChildrenMap.forEach((children, v2) => {
+      const node = g.node(v2);
+      const removedNodes = [];
+      children.forEach((childId) => {
+        const childNode = g.node(childId);
+        if (!childNode) return;
+        removedNodes.push({ id: childId, node: childNode, parent: savedParents.get(childId) });
+        g.removeNode(childId);
+      });
+      const removedEdges = allSavedEdges.filter(
+        ({ edge }) => children.includes(edge.v) || children.includes(edge.w)
+      );
+      const bounds = clusterBounds[v2];
+      if (!node) return;
+      isolatedClusters.push({
+        clusterId: v2,
+        subgraph: node._dagreClusterSubgraph,
+        bounds,
+        children,
+        removedNodes,
+        removedEdges
+      });
+      node.width = bounds.width;
+      node.height = bounds.height;
+    });
+    const proxyEdgeKeys = /* @__PURE__ */ new Set();
+    allSavedEdges.forEach(({ edge, label }) => {
+      const effV = topLevelNode(edge.v);
+      const effW = topLevelNode(edge.w);
+      if (effV !== effW && g.hasNode(effV) && g.hasNode(effW)) {
+        const key = `${effV}\0${effW}`;
+        if (!proxyEdgeKeys.has(key)) {
+          proxyEdgeKeys.add(key);
+          g.setEdge(effV, effW, { ...label, width: 0, height: 0 });
+        }
+      }
+    });
+    const layoutG = buildLayoutGraph(g);
+    const result = runLayout(layoutG, time2, opts, (_a = previousLayouts.get(g)) != null ? _a : null);
+    previousLayouts.set(g, result);
+    updateInputGraph(g, layoutG);
+    proxyEdgeKeys.forEach((key) => {
+      const sep2 = key.indexOf("\0");
+      const effV = key.slice(0, sep2);
+      const effW = key.slice(sep2 + 1);
+      if (g.hasEdge(effV, effW)) g.removeEdge(effV, effW);
+    });
+    isolatedClusters.forEach(({ clusterId, subgraph, bounds, removedNodes, removedEdges }) => {
+      var _a2, _b;
+      const clusterNode = g.node(clusterId);
+      const clusterX = (_a2 = clusterNode == null ? void 0 : clusterNode.x) != null ? _a2 : 0;
+      const clusterY = (_b = clusterNode == null ? void 0 : clusterNode.y) != null ? _b : 0;
+      const subgraphCenterX = (bounds.minX + bounds.maxX) / 2;
+      const subgraphCenterY = (bounds.minY + bounds.maxY) / 2;
+      removedNodes.forEach(({ id, node, parent }) => {
+        g.setNode(id, node);
+        if (parent !== void 0) g.setParent(id, parent);
+      });
+      removedEdges.forEach(({ edge, label }) => {
+        g.setEdge(edge, label);
+      });
+      subgraph.nodes().forEach((u) => {
+        if (u === clusterId) return;
+        const subNode = subgraph.node(u);
+        const mainNode = g.node(u);
+        if (mainNode && subNode && typeof subNode.x === "number" && typeof subNode.y === "number") {
+          mainNode.x = clusterX + (subNode.x - subgraphCenterX);
+          mainNode.y = clusterY + (subNode.y - subgraphCenterY);
+        }
+      });
+      updateClusterEdges(g, subgraph, clusterX - subgraphCenterX, clusterY - subgraphCenterY);
+      delete clusterNode._dagreClusterSubgraph;
+    });
+    clusterNodes.forEach((v2) => {
+      var _a2, _b;
+      const node = g.node(v2);
+      const bounds = clusterBounds[v2];
+      if (node && node.rankdir && node._dagreClusterSubgraph && bounds) {
+        const subgraph = node._dagreClusterSubgraph;
+        const parentX = (_a2 = node.x) != null ? _a2 : 0;
+        const parentY = (_b = node.y) != null ? _b : 0;
+        const subgraphCenterX = (bounds.minX + bounds.maxX) / 2;
+        const subgraphCenterY = (bounds.minY + bounds.maxY) / 2;
+        subgraph.nodes().forEach((u) => {
+          if (u === v2) return;
+          const subNode = subgraph.node(u);
+          const mainNode = g.node(u);
+          if (mainNode && subNode && typeof subNode.x === "number" && typeof subNode.y === "number") {
+            const dx = subNode.x - subgraphCenterX;
+            const dy = subNode.y - subgraphCenterY;
+            mainNode.x = parentX + dx;
+            mainNode.y = parentY + dy;
+          }
+        });
+        updateClusterEdges(g, subgraph, parentX - subgraphCenterX, parentY - subgraphCenterY);
+        delete node._dagreClusterSubgraph;
+      }
+    });
+  }
+  function updateClusterEdges(g, subgraph, offsetX, offsetY) {
+    subgraph.edges().forEach((e) => {
+      if (!g.hasEdge(e)) return;
+      const source = subgraph.edge(e);
+      const target = g.edge(e);
+      target.points = source.points.map((p2) => ({ x: p2.x + offsetX, y: p2.y + offsetY }));
+      if (Object.hasOwn(source, "x")) {
+        target.x = source.x + offsetX;
+        target.y = source.y + offsetY;
+      }
+    });
+  }
+  function runLayout(g, time2, opts, previous = null) {
+    var _a, _b;
+    const dynamic = (opts == null ? void 0 : opts.useDynamic) !== false;
+    const oldGraph = dynamic ? (_a = previous == null ? void 0 : previous.graph) != null ? _a : null : null;
+    const rawOldNodes = dynamic ? (_b = previous == null ? void 0 : previous.rawNodes) != null ? _b : null : null;
+    time2("    makeSpaceForEdgeLabels", () => makeSpaceForEdgeLabels(g));
+    time2("    removeSelfEdges", () => removeSelfEdges(g));
+    time2("    acyclic", () => run(g, oldGraph));
+    time2("    nestingGraph.run", () => run3(g));
+    time2("    rank", () => rank_default(asNonCompoundGraph(g)));
+    time2("    injectEdgeLabelProxies", () => injectEdgeLabelProxies(g));
+    time2("    removeEmptyRanks", () => removeEmptyRanks(g));
+    time2("    nestingGraph.cleanup", () => cleanup(g));
+    time2("    normalizeRanks", () => normalizeRanks(g));
+    time2("    assignRankMinMax", () => assignRankMinMax(g));
+    time2("    removeEdgeLabelProxies", () => removeEdgeLabelProxies(g));
+    time2("    normalize.run", () => run2(g));
+    time2("    parentDummyChains", () => parent_dummy_chains_default(g));
+    time2("    addBorderSegments", () => add_border_segments_default(g));
+    time2("    order", () => order(g, opts, rawOldNodes));
+    time2("    insertSelfEdges", () => insertSelfEdges(g));
+    time2("    adjustCoordinateSystem", () => adjust(g));
+    time2("    position", () => position(g, opts.corePath));
+    time2("    positionSelfEdges", () => positionSelfEdges(g));
+    const rawNodes = JSON.parse(JSON.stringify(g._nodes));
+    time2("    removeBorderNodes", () => removeBorderNodes(g));
+    time2("    normalize.undo", () => undo2(g));
+    time2("    fixupEdgeLabelCoords", () => fixupEdgeLabelCoords(g));
+    time2("    undoCoordinateSystem", () => undo3(g));
+    time2("    translateGraph", () => translateGraph(g));
+    time2("    assignNodeIntersects", () => assignNodeIntersects(g));
+    time2("    reversePoints", () => reversePointsForReversedEdges(g));
+    time2("    acyclic.undo", () => undo(g));
+    return { graph: g, rawNodes };
+  }
+  function updateInputGraph(inputGraph, layoutGraph) {
+    inputGraph.nodes().forEach((v2) => {
+      const inputLabel = inputGraph.node(v2);
+      const layoutLabel = layoutGraph.node(v2);
+      if (inputLabel) {
+        inputLabel.x = layoutLabel.x;
+        inputLabel.y = layoutLabel.y;
+        inputLabel.order = layoutLabel.order;
+        inputLabel.rank = layoutLabel.rank;
+        if (layoutGraph.children(v2).length) {
+          inputLabel.width = layoutLabel.width;
+          inputLabel.height = layoutLabel.height;
+        }
+      }
+    });
+    inputGraph.edges().forEach((e) => {
+      const inputLabel = inputGraph.edge(e);
+      const layoutLabel = layoutGraph.edge(e);
+      inputLabel.points = layoutLabel.points;
+      if (Object.hasOwn(layoutLabel, "x")) {
+        inputLabel.x = layoutLabel.x;
+        inputLabel.y = layoutLabel.y;
+      }
+    });
+    inputGraph.graph().width = layoutGraph.graph().width;
+    inputGraph.graph().height = layoutGraph.graph().height;
+  }
+  var graphNumAttrs = ["nodesep", "edgesep", "ranksep", "marginx", "marginy"];
+  var graphDefaults = { ranksep: 50, edgesep: 20, nodesep: 50, rankdir: "TB", rankalign: "center" };
+  var graphAttrs = ["acyclicer", "ranker", "rankdir", "align", "rankalign"];
+  var nodeNumAttrs = ["width", "height", "rank"];
+  var nodeDefaults = { width: 0, height: 0 };
+  var edgeNumAttrs = ["minlen", "weight", "width", "height", "labeloffset"];
+  var edgeDefaults = {
+    minlen: 1,
+    weight: 1,
+    width: 0,
+    height: 0,
+    labeloffset: 10,
+    labelpos: "r"
+  };
+  var edgeAttrs = ["labelpos"];
+  function buildLayoutGraph(inputGraph) {
+    const g = new Graph({ multigraph: true, compound: true });
+    const graph = canonicalize(inputGraph.graph());
+    g.setGraph(Object.assign(
+      {},
+      graphDefaults,
+      selectNumberAttrs(graph, graphNumAttrs),
+      pick(graph, graphAttrs)
+    ));
+    inputGraph.nodes().forEach((v2) => {
+      const node = canonicalize(inputGraph.node(v2));
+      const newNode = selectNumberAttrs(node, nodeNumAttrs);
+      Object.keys(nodeDefaults).forEach((k2) => {
+        if (newNode[k2] === void 0) {
+          newNode[k2] = nodeDefaults[k2];
+        }
+      });
+      g.setNode(v2, newNode);
+      const parent = inputGraph.parent(v2);
+      if (parent !== void 0) {
+        g.setParent(v2, parent);
+      }
+    });
+    inputGraph.edges().forEach((e) => {
+      const edge = canonicalize(inputGraph.edge(e));
+      g.setEdge(e, Object.assign(
+        {},
+        edgeDefaults,
+        selectNumberAttrs(edge, edgeNumAttrs),
+        pick(edge, edgeAttrs)
+      ));
+    });
+    return g;
+  }
+  function makeSpaceForEdgeLabels(g) {
+    const graph = g.graph();
+    graph.ranksep /= 2;
+    g.edges().forEach((e) => {
+      var _a;
+      const edge = g.edge(e);
+      edge.minlen *= 2;
+      if (((_a = edge.labelpos) != null ? _a : "r").toLowerCase() !== "c") {
+        if (graph.rankdir === "TB" || graph.rankdir === "BT") {
+          edge.width += edge.labeloffset;
+        } else {
+          edge.height += edge.labeloffset;
+        }
+      }
+    });
+  }
+  function injectEdgeLabelProxies(g) {
+    g.edges().forEach((e) => {
+      const edge = g.edge(e);
+      if (edge.width && edge.height) {
+        const v2 = g.node(e.v);
+        const w2 = g.node(e.w);
+        const label = { rank: (w2.rank - v2.rank) / 2 + v2.rank, e };
+        addDummyNode(g, "edge-proxy", label, "_ep");
+      }
+    });
+  }
+  function assignRankMinMax(g) {
+    let maxRank2 = 0;
+    g.nodes().forEach((v2) => {
+      const node = g.node(v2);
+      if (node.borderTop) {
+        node.minRank = g.node(node.borderTop).rank;
+        node.maxRank = g.node(node.borderBottom).rank;
+        maxRank2 = Math.max(maxRank2, node.maxRank);
+      }
+    });
+    g.graph().maxRank = maxRank2;
+  }
+  function removeEdgeLabelProxies(g) {
+    g.nodes().forEach((v2) => {
+      const node = g.node(v2);
+      if (node.dummy === "edge-proxy") {
+        const proxyNode = node;
+        g.edge(proxyNode.e).labelRank = node.rank;
+        g.removeNode(v2);
+      }
+    });
+  }
+  function translateGraph(g) {
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = 0;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = 0;
+    const graphLabel = g.graph();
+    const marginX = graphLabel.marginx || 0;
+    const marginY = graphLabel.marginy || 0;
+    function getExtremes(attrs) {
+      const x2 = attrs.x;
+      const y2 = attrs.y;
+      const w2 = attrs.width;
+      const h = attrs.height;
+      minX = Math.min(minX, x2 - w2 / 2);
+      maxX = Math.max(maxX, x2 + w2 / 2);
+      minY = Math.min(minY, y2 - h / 2);
+      maxY = Math.max(maxY, y2 + h / 2);
+    }
+    g.nodes().forEach((v2) => getExtremes(g.node(v2)));
+    g.edges().forEach((e) => {
+      const edge = g.edge(e);
+      if (Object.hasOwn(edge, "x")) {
+        getExtremes(edge);
+      }
+    });
+    minX -= marginX;
+    minY -= marginY;
+    g.nodes().forEach((v2) => {
+      const node = g.node(v2);
+      node.x -= minX;
+      node.y -= minY;
+    });
+    g.edges().forEach((e) => {
+      const edge = g.edge(e);
+      edge.points.forEach((p2) => {
+        p2.x -= minX;
+        p2.y -= minY;
+      });
+      if (Object.hasOwn(edge, "x")) {
+        edge.x -= minX;
+      }
+      if (Object.hasOwn(edge, "y")) {
+        edge.y -= minY;
+      }
+    });
+    graphLabel.width = maxX - minX + marginX;
+    graphLabel.height = maxY - minY + marginY;
+  }
+  function assignNodeIntersects(g) {
+    g.edges().forEach((e) => {
+      if (e.v === e.w) return;
+      const edge = g.edge(e);
+      const nodeV = g.node(e.v);
+      const nodeW = g.node(e.w);
+      let p1, p2;
+      if (!edge.points) {
+        edge.points = [];
+        p1 = nodeW;
+        p2 = nodeV;
+      } else {
+        p1 = edge.points[0];
+        p2 = edge.points[edge.points.length - 1];
+      }
+      edge.points.unshift(intersectRect(nodeV, p1));
+      edge.points.push(intersectRect(nodeW, p2));
+    });
+  }
+  function fixupEdgeLabelCoords(g) {
+    g.edges().forEach((e) => {
+      const edge = g.edge(e);
+      if (Object.hasOwn(edge, "x")) {
+        if (edge.labelpos === "l" || edge.labelpos === "r") {
+          edge.width -= edge.labeloffset;
+        }
+        switch (edge.labelpos) {
+          case "l":
+            edge.x -= edge.width / 2 + edge.labeloffset;
+            break;
+          case "r":
+            edge.x += edge.width / 2 + edge.labeloffset;
+            break;
+        }
+      }
+    });
+  }
+  function reversePointsForReversedEdges(g) {
+    g.edges().forEach((e) => {
+      const edge = g.edge(e);
+      if (edge.reversed) {
+        edge.points.reverse();
+      }
+    });
+  }
+  function removeBorderNodes(g) {
+    g.nodes().forEach((v2) => {
+      if (g.children(v2).length) {
+        const node = g.node(v2);
+        const t = g.node(node.borderTop);
+        const b2 = g.node(node.borderBottom);
+        const l2 = g.node(node.borderLeft[node.borderLeft.length - 1]);
+        const r = g.node(node.borderRight[node.borderRight.length - 1]);
+        node.width = Math.abs(r.x - l2.x);
+        node.height = Math.abs(b2.y - t.y);
+        node.x = l2.x + node.width / 2;
+        node.y = t.y + node.height / 2;
+      }
+    });
+    g.nodes().forEach((v2) => {
+      if (g.node(v2).dummy === "border") {
+        g.removeNode(v2);
+      }
+    });
+  }
+  function removeSelfEdges(g) {
+    g.edges().forEach((e) => {
+      if (e.v === e.w) {
+        const node = g.node(e.v);
+        if (!node.selfEdges) {
+          node.selfEdges = [];
+        }
+        node.selfEdges.push({ e, label: g.edge(e) });
+        g.removeEdge(e);
+      }
+    });
+  }
+  function insertSelfEdges(g) {
+    const layers = buildLayerMatrix(g);
+    layers.forEach((layer) => {
+      let orderShift = 0;
+      layer.forEach((v2, i) => {
+        const node = g.node(v2);
+        if (typeof node.rank !== "number") node.rank = 0;
+        node.order = i + orderShift;
+        (node.selfEdges || []).forEach((selfEdge) => {
+          addDummyNode(g, "selfedge", {
+            width: selfEdge.label.width,
+            height: selfEdge.label.height,
+            rank: node.rank,
+            order: i + ++orderShift,
+            e: selfEdge.e,
+            edgeLabel: selfEdge.label
+          }, "_se");
+          if (!Array.isArray(selfEdge.label.points) || selfEdge.label.points.length !== 7) {
+            selfEdge.label.points = [
+              { x: 0, y: -10 },
+              { x: 0, y: -10 },
+              { x: 0, y: 0 },
+              { x: 0, y: 10 },
+              { x: 0, y: 10 },
+              { x: 0, y: 0 },
+              { x: 0, y: 0 }
+            ];
+          }
+        });
+        delete node.selfEdges;
+      });
+    });
+  }
+  function positionSelfEdges(g) {
+    g.nodes().forEach((v2) => {
+      const node = g.node(v2);
+      const valid = (val) => typeof val === "number" && isFinite(val);
+      if (node.dummy === "selfedge") {
+        const selfEdgeNode = node;
+        const selfNode = g.node(selfEdgeNode.e.v);
+        const xVal = valid(selfNode == null ? void 0 : selfNode.x) ? selfNode.x : 0;
+        const yVal = valid(selfNode == null ? void 0 : selfNode.y) ? selfNode.y : 0;
+        const widthVal = valid(selfNode == null ? void 0 : selfNode.width) ? selfNode.width : 0;
+        const heightVal = valid(selfNode == null ? void 0 : selfNode.height) ? selfNode.height : 0;
+        const nodeX = valid(node.x) ? node.x : xVal;
+        const nodeY = valid(node.y) ? node.y : yVal;
+        const dx = widthVal / 2;
+        const dy = heightVal / 2;
+        selfEdgeNode.edgeLabel.points = [
+          { x: nodeX + dx, y: nodeY - dy },
+          { x: nodeX + dx, y: nodeY - dy },
+          { x: nodeX, y: nodeY },
+          { x: nodeX - dx, y: nodeY + dy },
+          { x: nodeX - dx, y: nodeY + dy },
+          { x: nodeX, y: nodeY },
+          { x: nodeX, y: nodeY }
+        ];
+        selfEdgeNode.edgeLabel.x = nodeX;
+        selfEdgeNode.edgeLabel.y = nodeY;
+        g.setEdge(selfEdgeNode.e, selfEdgeNode.edgeLabel);
+        g.removeNode(v2);
+      } else if (node && Array.isArray(node.selfEdges)) {
+        node.selfEdges.forEach((selfEdge) => {
+          if (!Array.isArray(selfEdge.label.points) || selfEdge.label.points.length !== 7) {
+            const xVal = valid(node.x) ? node.x : 0;
+            const yVal = valid(node.y) ? node.y : 0;
+            const widthVal = valid(node.width) ? node.width : 0;
+            const heightVal = valid(node.height) ? node.height : 0;
+            const dx = widthVal / 2;
+            const dy = heightVal / 2;
+            selfEdge.label.points = [
+              { x: xVal + dx, y: yVal - dy },
+              { x: xVal + dx, y: yVal - dy },
+              { x: xVal, y: yVal },
+              { x: xVal - dx, y: yVal + dy },
+              { x: xVal - dx, y: yVal + dy },
+              { x: xVal, y: yVal },
+              { x: xVal, y: yVal }
+            ];
+          }
+        });
+      }
+    });
+  }
+  function selectNumberAttrs(obj, attrs) {
+    return mapValues(pick(obj, attrs), Number);
+  }
+  function canonicalize(attrs) {
+    const newAttrs = {};
+    if (attrs) {
+      Object.entries(attrs).forEach(([k2, v2]) => {
+        if (typeof k2 === "string") {
+          k2 = k2.toLowerCase();
+        }
+        newAttrs[k2] = v2;
+      });
+    }
+    return newAttrs;
+  }
+
+  // lib/debug.ts
+  function debugOrdering(graph) {
+    const layerMatrix = buildLayerMatrix(graph);
+    const h = new Graph({ compound: true, multigraph: true }).setGraph({});
+    graph.nodes().forEach((node) => {
+      h.setNode(node, { label: node });
+      h.setParent(node, "layer" + graph.node(node).rank);
+    });
+    graph.edges().forEach((edge) => h.setEdge(edge.v, edge.w, {}, edge.name));
+    layerMatrix.forEach((layer, i) => {
+      const layerV = "layer" + i;
+      h.setNode(layerV, { rank: "same" });
+      layer.reduce((u, v2) => {
+        h.setEdge(u, v2, { style: "invis" });
+        return v2;
+      });
+    });
+    return h;
+  }
+
+  // index.ts
+  var util = { time, notime };
+  var dagre = {
+    graphlib: graph_lib_exports,
+    version,
+    layout,
+    debug: debugOrdering,
+    util: { time, notime }
+  };
+  var index_default = dagre;
+  return __toCommonJS(index_exports);
+})();
+/*! For license information please see dagre.js.LEGAL.txt */

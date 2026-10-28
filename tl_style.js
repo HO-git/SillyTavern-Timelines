@@ -17,15 +17,14 @@ function getAlphaFromRGBA(rgbaString) {
  * Highlights the path from a specified checkpoint node to the root in a data structure representing a Cytoscape graph.
  * The function iteratively traces and highlights edges and nodes, adjusting visual attributes like color, thickness, and zIndex.
  *
- * @param {Object} rawData - The data structure representing the Cytoscape graph with nodes and edges.
+ * @param {Object} graphIndex - Lookup tables for the graph, as returned by `indexGraph`.
  * @param {string|number} bookmarkNodeId - The ID of the checkpoint node to start highlighting from.
  * @param {number} currentHighlightThickness - The starting thickness for highlighting edges (default is 4).
  * @param {number} startingZIndex - The starting zIndex for nodes and edges to be highlighted (default is 1000).
  */
-function highlightPathToRoot(rawData, bookmarkNodeId, currentHighlightThickness = 4, startingZIndex = 1000) {
-    let bookmarkNode = Object.values(rawData).find(entry =>
-        entry.group === 'nodes' && entry.data.id === bookmarkNodeId,
-    );
+function highlightPathToRoot(graphIndex, bookmarkNodeId, currentHighlightThickness = 4, startingZIndex = 1000) {
+    const { nodesById, incomingEdgeByTarget } = graphIndex;
+    let bookmarkNode = nodesById.get(bookmarkNodeId);
 
     if (!bookmarkNode) {
         console.error('Checkpoint node not found!');
@@ -40,9 +39,7 @@ function highlightPathToRoot(rawData, bookmarkNodeId, currentHighlightThickness 
             break; // exit from the while loop
         }
 
-        let incomingEdge = Object.values(rawData).find(entry =>
-            entry.group === 'edges' && entry.data.target === currentNode.data.id,
-        );
+        let incomingEdge = incomingEdgeByTarget.get(currentNode.data.id);
 
         if (incomingEdge) {
             incomingEdge.data.isHighlight = true;
@@ -58,13 +55,31 @@ function highlightPathToRoot(rawData, bookmarkNodeId, currentHighlightThickness 
             currentZIndex++; // Increase the zIndex for the next edge in the path
 
             // Select the next node up
-            currentNode = Object.values(rawData).find(entry =>
-                entry.group === 'nodes' && entry.data.id === incomingEdge.data.source,
-            );
+            currentNode = nodesById.get(incomingEdge.data.source);
         } else {  // This was the topmost node
             currentNode = null;
         }
     }
+}
+
+/**
+ * Builds lookup tables for walking the graph data, so that `highlightPathToRoot` doesn't have to
+ * scan the whole graph at every step (which froze the UI for large chat histories).
+ *
+ * @param {Object} rawData - The data structure representing the Cytoscape graph with nodes and edges.
+ * @returns {Object} `{ nodesById, incomingEdgeByTarget }`, both `Map`s. For each target, the first incoming edge is kept.
+ */
+function indexGraph(rawData) {
+    const nodesById = new Map();
+    const incomingEdgeByTarget = new Map();
+    Object.values(rawData).forEach(entry => {
+        if (entry.group === 'nodes' && !nodesById.has(entry.data.id)) {
+            nodesById.set(entry.data.id, entry);
+        } else if (entry.group === 'edges' && !incomingEdgeByTarget.has(entry.data.target)) {
+            incomingEdgeByTarget.set(entry.data.target, entry);
+        }
+    });
+    return { nodesById, incomingEdgeByTarget };
 }
 
 /**
@@ -101,9 +116,10 @@ export function setupStylesAndData(nodeData) {
         theme.bookmarkColor = extension_settings.timeline.bookmarkColor;
     }
 
+    const graphIndex = indexGraph(nodeData);
     Object.values(nodeData).forEach(entry => {
         if (entry.group === 'nodes' && entry.data.isBookmark) {
-            highlightPathToRoot(nodeData, entry.data.id);
+            highlightPathToRoot(graphIndex, entry.data.id);
         }
     });
 

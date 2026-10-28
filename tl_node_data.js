@@ -112,15 +112,29 @@ function buildGraph(allChats, allChatFileNamesAndLengths) {
                 uniqueSwipes = [...new Set(allSwipes)].filter(swipeText => swipeText !== text);
             }
 
+            // The node is shared by all chats in this message group, so add it only once.
+            cyElements.push({
+                group: 'nodes',
+                data: node,
+            });
+
             // Treat each message in this message group. A message may have multiple parents (happens for a canned reply, used in several chats at the same chat depth).
+            // Each unique parent gets one edge to this node. Previously, there was one edge per chat file, which produced
+            // thousands of parallel edges (and duplicate nodes) for a long chat with many branches, making the layout very slow.
             const uniqueParents = new Set();
             for (const messageObj of group) {
                 const parentNodeId = previousNodes[messageObj.file_name];
 
-                // Store swipe node and edge data for the each unique parent node.
-                if (messageId !== 0 && !uniqueParents.has(parentNodeId)) {
-                    uniqueParents.add(parentNodeId);
+                // Keep track of the originating node for each message in the group
+                previousNodes[messageObj.file_name] = nodeId;
 
+                if (uniqueParents.has(parentNodeId)) {
+                    continue;
+                }
+                uniqueParents.add(parentNodeId);
+
+                // Store swipe node and edge data for the each unique parent node.
+                if (messageId !== 0) {
                     if (!parentSwipeData[parentNodeId]) {
                         parentSwipeData[parentNodeId] = {
                             storedSwipes: [],
@@ -157,11 +171,6 @@ function buildGraph(allChats, allChatFileNamesAndLengths) {
                     });
                 }
 
-                cyElements.push({
-                    group: 'nodes',
-                    data: node,
-                });
-
                 // Create edge for this node
                 cyElements.push({
                     group: 'edges',
@@ -171,9 +180,6 @@ function buildGraph(allChats, allChatFileNamesAndLengths) {
                         target: nodeId,
                     },
                 });
-
-                // Keep track of the originating node for each message in the group
-                previousNodes[messageObj.file_name] = nodeId;
 
                 keyCounter += 1;
             }
